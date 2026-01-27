@@ -1,0 +1,1452 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Email Correspondence Network</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body { margin: 0; background: #111; font-family: system-ui, sans-serif; overflow: hidden; }
+        canvas { display: block; }
+        #controls {
+            position: fixed; top: 20px; left: 20px;
+            background: rgba(20,20,20,0.95); padding: 20px;
+            border-radius: 12px; color: #fff; width: 280px; z-index: 10;
+            max-height: calc(100vh - 40px); overflow-y: auto;
+        }
+        h1 { margin: 0 0 10px; font-size: 18px; color: #4fc3f7; }
+        .explain { font-size: 12px; color: #888; margin-bottom: 15px; line-height: 1.4; }
+        .stat { font-size: 13px; color: #aaa; margin: 5px 0; }
+        .stat b { color: #fff; }
+        input[type=text] {
+            width: 100%; padding: 10px; margin: 10px 0;
+            background: #222; border: 1px solid #444; border-radius: 6px; color: #fff;
+            box-sizing: border-box;
+        }
+        #results { max-height: 200px; overflow-y: auto; }
+        .result { padding: 8px; cursor: pointer; font-size: 13px; color: #ccc; border-radius: 4px; border-bottom: 1px solid #333; }
+        .result:hover { background: #333; }
+        .result small { color: #666; }
+        label { display: block; margin-top: 12px; font-size: 12px; color: #666; }
+        input[type=range] { width: 100%; margin: 8px 0; }
+
+        #info {
+            position: fixed; bottom: 20px; left: 20px;
+            background: rgba(20,20,20,0.95); padding: 15px;
+            border-radius: 10px; color: #fff; display: none; z-index: 10;
+            max-width: 320px; max-height: 350px; overflow-y: auto;
+        }
+        #info h3 { margin: 0 0 8px; color: #4fc3f7; font-size: 15px; word-break: break-all; }
+        #info.locked { border: 2px solid #4fc3f7; }
+
+        #loading {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+            color: #4fc3f7; font-size: 18px; text-align: center;
+        }
+
+        .legend { margin-top: 15px; padding-top: 15px; border-top: 1px solid #333; }
+        .legend-title { font-size: 11px; color: #666; margin-bottom: 8px; }
+        .legend-item { display: flex; align-items: center; margin: 4px 0; font-size: 11px; color: #aaa; }
+        .legend-dot { width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
+
+        .btn {
+            display: block; margin-top: 8px; padding: 10px 14px;
+            background: #4fc3f7; color: #000; border: none; border-radius: 6px;
+            cursor: pointer; font-weight: 600; width: 100%; font-size: 12px;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: rgba(255,255,255,0.2);
+        }
+        .btn:hover { background: #81d4fa; }
+        .btn:active { opacity: 0.8; }
+
+        #clear-btn { display: none; background: #666; color: #fff; }
+        #clear-btn:hover { background: #888; }
+        #toxicdocs-btn { background: #ff9800; }
+        #toxicdocs-btn:hover { background: #ffb74d; }
+        #list-connections-btn { background: #00897b; color: #fff; }
+        #list-connections-btn:hover { background: #26a69a; }
+
+        #connections-list { margin-top: 10px; max-height: 150px; overflow-y: auto; }
+        .conn-item { padding: 4px 0; font-size: 11px; color: #ccc; border-bottom: 1px solid #333; cursor: pointer; }
+        .conn-item:hover { color: #4fc3f7; }
+
+        #zoom-controls {
+            position: fixed; bottom: 20px; right: 20px;
+            background: rgba(20,20,20,0.95); padding: 10px;
+            border-radius: 10px; z-index: 10;
+        }
+        #zoom-controls button {
+            width: 36px; height: 36px; margin: 2px;
+            background: #333; border: 1px solid #555; border-radius: 6px;
+            color: #fff; font-size: 18px; cursor: pointer;
+        }
+        #zoom-controls button:hover { background: #4fc3f7; color: #000; }
+
+        #isolate-toggle { position: fixed; bottom: 85px; right: 20px; z-index: 10; }
+        #isolate-btn {
+            padding: 10px 16px;
+            background: #333; color: #aaa; border: 1px solid #555; border-radius: 8px;
+            cursor: pointer; font-weight: 600; font-size: 12px;
+        }
+        #isolate-btn:hover { background: #444; color: #fff; }
+        #isolate-btn.active { background: #9c27b0; color: #fff; border-color: #9c27b0; }
+
+        .domain-badge {
+            display: inline-block; background: #444; color: #ccc;
+            padding: 2px 6px; border-radius: 4px; font-size: 10px; margin-left: 4px;
+        }
+        .org-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 3px 0; font-size: 11px; border-bottom: 1px solid #333;
+        }
+        .org-item:last-child { border-bottom: none; }
+        .org-name { color: #ccc; flex: 1; }
+        .org-count { color: #4fc3f7; font-weight: bold; margin-left: 8px; }
+        .org-type {
+            font-size: 9px; padding: 1px 4px; border-radius: 3px; margin-left: 6px;
+        }
+        .org-type.government { background: #1565c0; color: #fff; }
+        .org-type.industry { background: #c62828; color: #fff; }
+        .org-type.thinktank { background: #6a1b9a; color: #fff; }
+        .org-type.personal { background: #555; color: #aaa; }
+        .org-type.education { background: #2e7d32; color: #fff; }
+        .org-type.unknown { background: #555; color: #aaa; }
+
+        #industry-toggle {
+            margin-top: 15px; padding-top: 15px; border-top: 1px solid #333;
+        }
+        #industry-btn {
+            width: 100%; padding: 10px 14px;
+            background: #333; color: #aaa; border: 1px solid #555; border-radius: 6px;
+            cursor: pointer; font-weight: 600; font-size: 12px;
+        }
+        #industry-btn:hover, #thinktank-btn:hover { background: #444; color: #fff; }
+        #industry-btn.active { background: #c62828; color: #fff; border-color: #c62828; }
+        #thinktank-btn {
+            width: 100%; padding: 10px 14px;
+            background: #333; color: #aaa; border: 1px solid #555; border-radius: 6px;
+            cursor: pointer; font-weight: 600; font-size: 12px;
+        }
+        #thinktank-btn.active { background: #6a1b9a; color: #fff; border-color: #6a1b9a; }
+
+        #industry-panel, #thinktank-panel {
+            position: fixed; top: 20px; right: 80px;
+            background: rgba(20,20,20,0.95); padding: 15px;
+            border-radius: 10px; color: #fff; display: none; z-index: 10;
+            max-width: 280px; max-height: calc(100vh - 40px); overflow-y: auto;
+        }
+        #thinktank-panel { right: 370px; }
+        #industry-panel h3 { margin: 0 0 5px; color: #c62828; font-size: 14px; }
+        #thinktank-panel h3 { margin: 0 0 5px; font-size: 14px; }
+        .industry-item, .thinktank-item {
+            padding: 8px 10px; margin: 4px 0; background: #222;
+            border-radius: 6px; font-size: 12px;
+            display: flex; justify-content: space-between; align-items: center;
+            border-left: 3px solid #c62828;
+        }
+        .thinktank-item { border-left-color: #6a1b9a; }
+        .industry-item:hover, .thinktank-item:hover { background: #333; }
+        .industry-item .name, .thinktank-item .name { color: #fff; cursor: pointer; flex: 1; }
+        .industry-item .count, .thinktank-item .count { color: #c62828; font-weight: bold; margin: 0 8px; }
+        .thinktank-item .count { color: #6a1b9a; }
+        .search-btn {
+            background: none; border: none; cursor: pointer; font-size: 14px;
+            padding: 2px 6px; border-radius: 4px;
+        }
+        .search-btn:hover { background: #444; }
+
+        #industry-people {
+            margin-top: 10px; padding-top: 10px; border-top: 1px solid #333;
+            display: none;
+        }
+        #industry-people h4 { margin: 0 0 8px; color: #4fc3f7; font-size: 12px; }
+        #industry-people-list {
+            max-height: 300px; overflow-y: auto;
+        }
+        .person-item {
+            padding: 6px 4px; font-size: 11px; color: #ccc;
+            border-bottom: 1px solid #333;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .person-item:hover { background: #333; }
+        .person-item .person-name { cursor: pointer; flex: 1; }
+        .person-item .person-name:hover { color: #4fc3f7; }
+        .person-item small { color: #888; margin: 0 4px; }
+        #thinktank-people { margin-top: 10px; padding-top: 10px; border-top: 1px solid #333; display: none; }
+        #thinktank-people h4 { margin: 0 0 8px; color: #6a1b9a; font-size: 12px; }
+        #thinktank-people-list { max-height: 300px; overflow-y: auto; }
+
+        #correspondent-panel {
+            position: fixed; top: 20px; right: 80px;
+            background: rgba(20,20,20,0.95); padding: 20px;
+            border-radius: 12px; color: #fff; width: 280px; z-index: 10;
+            display: none;
+        }
+        #correspondent-panel h3 { margin: 0 0 15px; color: #4fc3f7; font-size: 16px; }
+        #correspondent-panel h3 .clickable-name { cursor: pointer; text-decoration: underline; }
+        #correspondent-panel h3 .clickable-name:hover { color: #81d4fa; }
+    </style>
+</head>
+<body>
+    <div id="loading">Loading email network...<br><small style="color:#888">(this takes about 30 seconds)</small></div>
+    <canvas id="canvas"></canvas>
+
+    <div id="controls" style="display:none">
+        <h1>Email Network</h1>
+        <div class="explain">
+            Click a node to explore connections.<br>
+            Search finds anyone in the dataset.
+        </div>
+        <div class="stat">Showing: <b id="nc">0</b> nodes, <b id="ec">0</b> edges</div>
+
+        <input type="text" id="search" placeholder="Search by name or email...">
+        <div id="results"></div>
+
+        <label>Min activity: <span id="fv">100</span></label>
+        <input type="range" id="filter" min="10" max="500" value="100">
+
+        <div id="gov-toggle" style="margin: 15px 0; padding-top: 10px; border-top: 1px solid #333;">
+            <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
+                <input type="checkbox" id="gov-only-checkbox" style="margin-right: 8px;" checked>
+                Government Only (.gov) <span style="color:#666; margin-left:4px;">(Default)</span>
+            </label>
+        </div>
+
+        <div id="agency-filter">
+            <label style="margin-top: 0;">Filter by Agency:</label>
+            <select id="agency-select" style="width: 100%; padding: 8px; margin-top: 5px; background: #222; border: 1px solid #444; border-radius: 6px; color: #fff;">
+                <option value="">All agencies</option>
+            </select>
+        </div>
+
+        <div class="legend">
+            <div class="legend-title">Activity level:</div>
+            <div class="legend-item"><div class="legend-dot" style="background:#f44336"></div> 500+</div>
+            <div class="legend-item"><div class="legend-dot" style="background:#ff9800"></div> 100-500</div>
+            <div class="legend-item"><div class="legend-dot" style="background:#ffeb3b"></div> 50-100</div>
+            <div class="legend-item"><div class="legend-dot" style="background:#4caf50"></div> 20-50</div>
+            <div class="legend-item"><div class="legend-dot" style="background:#2196f3"></div> &lt;20</div>
+        </div>
+    </div>
+
+    <div id="industry-panel">
+        <h3>Corporate Correspondents</h3>
+        <div style="font-size:10px;color:#888;margin-bottom:10px;">Click company to see people, click 🔍 to search ToxicDocs</div>
+        <div id="industry-list"></div>
+        <div id="industry-people">
+            <h4 id="industry-people-title"></h4>
+            <div id="industry-people-list"></div>
+        </div>
+    </div>
+
+    <div id="thinktank-panel">
+        <h3 style="color:#6a1b9a;">Think Tank & Advocacy Correspondents</h3>
+        <div style="font-size:10px;color:#888;margin-bottom:10px;">Click org to see people, click 🔍 to search ToxicDocs</div>
+        <div id="thinktank-list"></div>
+        <div id="thinktank-people">
+            <h4 id="thinktank-people-title"></h4>
+            <div id="thinktank-people-list"></div>
+        </div>
+    </div>
+
+    <div id="info">
+        <h3 id="iname"></h3>
+        <div class="stat">Email: <b id="iemail" style="font-size:11px;word-break:break-all;"></b></div>
+        <div class="stat">Sent: <b id="isent"></b> | Received: <b id="irecv"></b></div>
+        <div class="stat">Connections: <b id="iconn"></b></div>
+        <div class="stat">Organization: <b id="iorg"></b></div>
+        <div id="org-breakdown" style="margin: 10px 0; padding: 10px; background: #1a1a1a; border-radius: 6px; display: none;">
+            <div style="font-size: 11px; color: #666; margin-bottom: 5px;">Receives emails from:</div>
+            <div id="org-list"></div>
+        </div>
+        <button class="btn" id="toxicdocs-btn">Search ToxicDocs</button>
+        <button class="btn" id="list-connections-btn">List Connections</button>
+        <div id="connections-list"></div>
+        <button class="btn" id="clear-btn">Clear Selection</button>
+    </div>
+
+    <div id="correspondent-panel">
+        <h3 id="correspondent-panel-title">Correspondents</h3>
+        <button class="btn" id="show-corporate-btn" style="background:#c62828; margin-bottom: 8px;">
+            Show <span id="corporate-name"></span>'s Corporate Correspondents
+        </button>
+        <button class="btn" id="show-thinktank-btn" style="background:#6a1b9a;">
+            Show <span id="thinktank-name"></span>'s Think Tank Correspondents
+        </button>
+        <div id="person-correspondents" style="margin-top:15px; display:none;">
+            <h4 id="correspondents-title" style="color:#4fc3f7;font-size:12px;margin-bottom:8px;"></h4>
+            <div id="correspondents-list" style="max-height:400px;overflow-y:auto;"></div>
+        </div>
+    </div>
+
+    <div id="isolate-toggle">
+        <button id="isolate-btn">Lock Network</button>
+    </div>
+
+    <div id="zoom-controls">
+        <button id="zoom-in">+</button>
+        <button id="zoom-out">−</button>
+        <button id="zoom-reset">⟲</button>
+    </div>
+
+    <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    canvas.width = width;
+    canvas.height = height;
+
+    let allData = null;
+    let nodeData = [];
+    let linkData = [];
+    let nodeById = new Map();
+    let transform = d3.zoomIdentity;
+    let lockedNode = null;
+    let hoveredNode = null;
+    let isolateMode = false;
+    let isolateCentralNode = null;
+    let selectedConnectionNode = null;  // Secondary selection in isolate mode
+    let currentEmail = "";
+    let industryMode = false;
+    let industryGroups = {};  // org name -> {nodes: [], centroid: {x, y}}
+    let selectedIndustry = null;
+    let currentAgencyFilter = "";
+
+    // Domain to organization lookup
+    const domainOrgs = {
+        // Government
+        "epa.gov": {name: "Environmental Protection Agency", type: "government"},
+        "ep3.gov": {name: "EPA", type: "government"},
+        "epa.govl": {name: "EPA", type: "government"},
+        "epa.qov": {name: "EPA", type: "government"},
+        "epa.qovl": {name: "EPA", type: "government"},
+        "cpa.gov": {name: "EPA", type: "government"},
+        "ios.doi.gov": {name: "DOI - Office of Secretary", type: "government"},
+        "sol.doi.gov": {name: "DOI - Solicitor", type: "government"},
+        "blm.gov": {name: "Bureau of Land Management", type: "government"},
+        "fws.gov": {name: "Fish & Wildlife Service", type: "government"},
+        "usgs.gov": {name: "US Geological Survey", type: "government"},
+        "mail.house.gov": {name: "US House of Representatives", type: "government"},
+        "state.gov": {name: "US State Department", type: "government"},
+        "osec.usda.gov": {name: "USDA", type: "government"},
+        "dot.gov": {name: "Dept. of Transportation", type: "government"},
+        "mail.mil": {name: "US Military", type: "government"},
+        "nebraska.gov": {name: "State of Nebraska", type: "government"},
+        "michigan.gov": {name: "State of Michigan", type: "government"},
+        "oklahoma.gov": {name: "State of Oklahoma", type: "government"},
+        "texas.gov": {name: "State of Texas", type: "government"},
+        "wv.gov": {name: "State of West Virginia", type: "government"},
+
+        // Oil & Gas
+        "api.org": {name: "American Petroleum Institute", type: "industry"},
+        "bp.com": {name: "BP", type: "industry"},
+        "shell.com": {name: "Shell", type: "industry"},
+        "exxonmobil.com": {name: "ExxonMobil", type: "industry"},
+        "chevron.com": {name: "Chevron", type: "industry"},
+        "conocophillips.com": {name: "ConocoPhillips", type: "industry"},
+        "marathonoil.com": {name: "Marathon Oil", type: "industry"},
+        "oxy.com": {name: "Occidental Petroleum", type: "industry"},
+
+        // Chemicals
+        "americanchemistry.com": {name: "American Chemistry Council", type: "industry"},
+        "dow.com": {name: "Dow Chemical", type: "industry"},
+        "ge.com": {name: "General Electric", type: "industry"},
+        "dupont.com": {name: "DuPont", type: "industry"},
+        "basf.com": {name: "BASF", type: "industry"},
+        "3m.com": {name: "3M", type: "industry"},
+        "monsanto.com": {name: "Monsanto", type: "industry"},
+        "bayer.com": {name: "Bayer", type: "industry"},
+
+        // Mining & Utilities
+        "nma.org": {name: "National Mining Association", type: "industry"},
+        "eei.org": {name: "Edison Electric Institute", type: "industry"},
+        "peabodyenergy.com": {name: "Peabody Energy", type: "industry"},
+        "rfrep.com": {name: "RF Industries", type: "industry"},
+
+        // Think Tanks & Advocacy
+        "heritage.org": {name: "Heritage Foundation", type: "thinktank"},
+        "heartland.org": {name: "Heartland Institute", type: "thinktank"},
+        "cato.org": {name: "Cato Institute", type: "thinktank"},
+        "cei.org": {name: "Competitive Enterprise Institute", type: "thinktank"},
+        "uschamber.com": {name: "US Chamber of Commerce", type: "industry"},
+
+        // Law Firms & Consulting
+        "hunton.com": {name: "Hunton & Williams", type: "industry"},
+        "sidley.com": {name: "Sidley Austin", type: "industry"},
+
+        // Personal
+        "gmail.com": {name: "Gmail (Personal)", type: "personal"},
+        "yahoo.com": {name: "Yahoo (Personal)", type: "personal"},
+        "hotmail.com": {name: "Hotmail (Personal)", type: "personal"},
+        "aol.com": {name: "AOL (Personal)", type: "personal"},
+    };
+
+    function getOrgInfo(domain) {
+        if (domainOrgs[domain]) return domainOrgs[domain];
+        // Try to infer from domain
+        if (domain.endsWith('.gov')) return {name: domain, type: "government"};
+        if (domain.endsWith('.mil')) return {name: domain, type: "government"};
+        if (domain.endsWith('.edu')) return {name: domain, type: "education"};
+        return {name: domain, type: "unknown"};
+    }
+
+    // Zoom behavior
+    const zoom = d3.zoom()
+        .scaleExtent([0.1, 8])
+        .on('zoom', (e) => {
+            transform = e.transform;
+            draw();
+        });
+    d3.select(canvas).call(zoom);
+
+    // Load data
+    fetch("email_network.json")
+        .then(r => r.json())
+        .then(data => {
+            allData = data;
+            document.getElementById("loading").style.display = "none";
+            document.getElementById("controls").style.display = "block";
+            populateAgencyFilter();
+            applyFilters();  // Respects default gov-only checkbox
+        })
+        .catch(e => {
+            document.getElementById("loading").textContent = "Error: " + e.message;
+        });
+
+    function color(c) {
+        if (c > 500) return "#f44336";
+        if (c > 100) return "#ff9800";
+        if (c > 50) return "#ffeb3b";
+        if (c > 20) return "#4caf50";
+        return "#2196f3";
+    }
+
+    function render(minCount) {
+        // Filter nodes
+        const nodes = allData.nodes.filter(n => n.count >= minCount);
+        const ids = new Set(nodes.map(n => n.id));
+
+        // Filter edges
+        const edges = allData.edges.filter(e => ids.has(e.source) && ids.has(e.target));
+
+        document.getElementById("nc").textContent = nodes.length;
+        document.getElementById("ec").textContent = edges.length;
+
+        // Build node data with positions
+        nodeData = nodes.map(n => ({
+            ...n,
+            x: width / 2 + (Math.random() - 0.5) * width * 0.8,
+            y: height / 2 + (Math.random() - 0.5) * height * 0.8,
+            vx: 0,
+            vy: 0,
+            r: 5
+        }));
+
+        nodeById = new Map(nodeData.map(n => [n.id, n]));
+
+        // Build link data
+        linkData = edges.map(e => ({
+            source: nodeById.get(e.source),
+            target: nodeById.get(e.target),
+            weight: e.weight
+        })).filter(l => l.source && l.target);
+
+        // Run force simulation
+        runSimulation();
+    }
+
+    function runSimulation() {
+        const simulation = d3.forceSimulation(nodeData)
+            .force("link", d3.forceLink(linkData).id(d => d.id).distance(60).strength(0.2))
+            .force("charge", d3.forceManyBody().strength(-50).distanceMax(300))
+            .force("center", d3.forceCenter(width / 2, height / 2))
+            .force("collision", d3.forceCollide().radius(d => d.r + 2))
+            .stop();
+
+        // Run limited iterations
+        for (let i = 0; i < 150; i++) simulation.tick();
+
+        draw();
+    }
+
+    function draw() {
+        ctx.save();
+        ctx.clearRect(0, 0, width, height);
+        ctx.translate(transform.x, transform.y);
+        ctx.scale(transform.k, transform.k);
+
+        const maxWeight = d3.max(linkData, l => l.weight) || 1;
+
+        // Determine which nodes/links to highlight
+        let highlightedIds = null;
+        let centralId = null;
+        let selectedId = null;
+
+        if (isolateMode && isolateCentralNode) {
+            // In isolate mode: show ALL nodes, highlight central and selected connection
+            centralId = isolateCentralNode.id;
+            selectedId = selectedConnectionNode ? selectedConnectionNode.id : null;
+            // Don't set highlightedIds - all nodes stay visible
+        } else if (lockedNode || hoveredNode) {
+            const focusNode = lockedNode || hoveredNode;
+            centralId = focusNode.id;
+            highlightedIds = new Set([focusNode.id]);
+            linkData.forEach(l => {
+                if (l.source.id === focusNode.id) highlightedIds.add(l.target.id);
+                if (l.target.id === focusNode.id) highlightedIds.add(l.source.id);
+            });
+        }
+
+        // Draw edges
+        linkData.forEach(l => {
+            const isHighlighted = highlightedIds && (l.source.id === centralId || l.target.id === centralId);
+            const isVisible = !highlightedIds || isHighlighted;
+
+            // In isolate mode, highlight edge to selected connection
+            const isSelectedEdge = isolateMode && selectedId && (
+                (l.source.id === centralId && l.target.id === selectedId) ||
+                (l.target.id === centralId && l.source.id === selectedId)
+            );
+
+            if (!isVisible && highlightedIds) return; // Skip non-connected edges when focused
+
+            ctx.beginPath();
+            ctx.moveTo(l.source.x, l.source.y);
+            ctx.lineTo(l.target.x, l.target.y);
+
+            if (isSelectedEdge) {
+                ctx.strokeStyle = "rgba(255, 235, 59, 0.9)";  // Yellow for selected edge
+                ctx.lineWidth = Math.max(2, (l.weight / maxWeight) * 4) / transform.k;
+            } else if (isHighlighted) {
+                ctx.strokeStyle = "rgba(79, 195, 247, 0.8)";
+                ctx.lineWidth = Math.max(0.5, (l.weight / maxWeight) * 3) / transform.k;
+            } else {
+                ctx.strokeStyle = "rgba(255,255,255,0.15)";
+                ctx.lineWidth = Math.max(0.5, (l.weight / maxWeight) * 3) / transform.k;
+            }
+            ctx.stroke();
+        });
+
+        // Draw nodes
+        nodeData.forEach(n => {
+            const isHighlighted = !highlightedIds || highlightedIds.has(n.id);
+            const isCentral = centralId === n.id;
+            const isSelected = selectedId === n.id;
+
+            if (!isHighlighted && highlightedIds) {
+                // Draw faded
+                ctx.beginPath();
+                ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+                ctx.fillStyle = "rgba(50,50,50,0.3)";
+                ctx.fill();
+                return;
+            }
+
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+            ctx.fillStyle = color(n.count);
+            ctx.fill();
+
+            if (isCentral) {
+                ctx.strokeStyle = "#fff";
+                ctx.lineWidth = 2 / transform.k;
+                ctx.stroke();
+            } else if (isSelected) {
+                ctx.strokeStyle = "#ffeb3b";  // Yellow border for selected connection
+                ctx.lineWidth = 2 / transform.k;
+                ctx.stroke();
+            }
+        });
+
+        // Draw labels for large nodes when zoomed in enough
+        if (transform.k > 0.5) {
+            ctx.font = `${10 / transform.k}px system-ui`;
+            ctx.textAlign = "center";
+            ctx.fillStyle = "#fff";
+
+            nodeData.forEach(n => {
+                if (n.count < 200 && transform.k < 1.5) return;
+                if (!highlightedIds || highlightedIds.has(n.id)) {
+                    const label = n.name.length > 15 ? n.name.substring(0, 15) + "..." : n.name;
+                    ctx.fillText(label, n.x, n.y - n.r - 3 / transform.k);
+                }
+            });
+        }
+
+        // Draw industry bubbles when industry mode is active
+        if (industryMode) {
+            updateIndustryGroups();
+
+            Object.entries(industryGroups).forEach(([name, group]) => {
+                if (group.nodes.length === 0) return;
+
+                // Calculate bounding box with padding
+                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                group.nodes.forEach(n => {
+                    minX = Math.min(minX, n.x - n.r);
+                    maxX = Math.max(maxX, n.x + n.r);
+                    minY = Math.min(minY, n.y - n.r);
+                    maxY = Math.max(maxY, n.y + n.r);
+                });
+
+                const padding = 15 / transform.k;
+                const cx = (minX + maxX) / 2;
+                const cy = (minY + maxY) / 2;
+                const rx = (maxX - minX) / 2 + padding;
+                const ry = (maxY - minY) / 2 + padding;
+                const radius = Math.max(rx, ry, 30 / transform.k);
+
+                const isSelected = selectedIndustry === name;
+                const isThinktank = group.type === "thinktank";
+                const baseColor = isThinktank ? [106, 27, 154] : [198, 40, 40]; // purple vs red
+
+                // Draw bubble
+                ctx.beginPath();
+                ctx.ellipse(cx, cy, rx + 10/transform.k, ry + 10/transform.k, 0, 0, Math.PI * 2);
+                ctx.fillStyle = isSelected
+                    ? `rgba(${baseColor.join(',')}, 0.3)`
+                    : `rgba(${baseColor.join(',')}, 0.15)`;
+                ctx.fill();
+                ctx.strokeStyle = isSelected
+                    ? `rgb(${baseColor.join(',')})`
+                    : `rgba(${baseColor.join(',')}, 0.5)`;
+                ctx.lineWidth = (isSelected ? 2 : 1) / transform.k;
+                ctx.stroke();
+
+                // Draw label
+                ctx.font = `bold ${12 / transform.k}px system-ui`;
+                ctx.textAlign = "center";
+                ctx.fillStyle = "#fff";
+                ctx.fillText(name, cx, minY - 8 / transform.k);
+            });
+        }
+
+        // Highlight agency filter nodes
+        if (currentAgencyFilter) {
+            nodeData.forEach(n => {
+                if (n.isAgency) {
+                    ctx.beginPath();
+                    ctx.arc(n.x, n.y, n.r + 4/transform.k, 0, Math.PI * 2);
+                    ctx.strokeStyle = "#1565c0";
+                    ctx.lineWidth = 2 / transform.k;
+                    ctx.stroke();
+                }
+            });
+        }
+
+        ctx.restore();
+    }
+
+    // Mouse interaction
+    function getNodeAtPoint(x, y) {
+        const px = (x - transform.x) / transform.k;
+        const py = (y - transform.y) / transform.k;
+
+        for (let i = nodeData.length - 1; i >= 0; i--) {
+            const n = nodeData[i];
+            const dx = px - n.x;
+            const dy = py - n.y;
+            if (dx * dx + dy * dy < n.r * n.r) {
+                return n;
+            }
+        }
+        return null;
+    }
+
+    canvas.addEventListener('mousemove', (e) => {
+        const node = getNodeAtPoint(e.clientX, e.clientY);
+        if (node !== hoveredNode) {
+            hoveredNode = node;
+            canvas.style.cursor = node ? 'pointer' : 'default';
+            if (isolateMode) {
+                // In isolate mode, just update cursor, don't change display
+                // (wait for click to select)
+            } else if (!lockedNode) {
+                if (node) showInfo(node);
+                else hideInfo();
+            }
+            if (!isolateMode) draw();  // Only redraw on hover in normal mode
+        }
+    });
+
+    function handleCanvasClick(clientX, clientY) {
+        const node = getNodeAtPoint(clientX, clientY);
+        if (node) {
+            if (isolateMode) {
+                selectConnectionNode(node);
+            } else {
+                lockNode(node);
+            }
+        } else if (lockedNode && !isolateMode) {
+            unlockNode();
+        } else if (isolateMode && selectedConnectionNode) {
+            selectedConnectionNode = null;
+            showInfo(isolateCentralNode);
+            draw();
+        }
+    }
+
+    canvas.addEventListener('click', (e) => {
+        handleCanvasClick(e.clientX, e.clientY);
+    });
+
+    // Touch support for mobile - simple tap detection
+    let touchStartTime = 0;
+    let touchStartPos = {x: 0, y: 0};
+
+    canvas.addEventListener('touchstart', (e) => {
+        touchStartTime = Date.now();
+        touchStartPos = {x: e.touches[0].clientX, y: e.touches[0].clientY};
+    }, {passive: true});
+
+    canvas.addEventListener('touchend', (e) => {
+        const touchDuration = Date.now() - touchStartTime;
+        const touch = e.changedTouches[0];
+        const dx = touch.clientX - touchStartPos.x;
+        const dy = touch.clientY - touchStartPos.y;
+        const distance = Math.sqrt(dx*dx + dy*dy);
+
+        // Tap = short duration + small movement
+        if (touchDuration < 300 && distance < 20) {
+            handleCanvasClick(touch.clientX, touch.clientY);
+        }
+    });
+
+    function selectConnectionNode(node) {
+        if (node.id === isolateCentralNode.id) {
+            // Clicked on central node - clear selection
+            selectedConnectionNode = null;
+            showInfo(isolateCentralNode);
+        } else {
+            // Clicked on a connection
+            selectedConnectionNode = node;
+            showInfo(node);
+        }
+        document.getElementById("info").classList.add("locked");
+        document.getElementById("clear-btn").style.display = "block";
+        draw();
+    }
+
+    function showInfo(n) {
+        currentEmail = n.id;
+        displayedNode = n;  // Track for button handlers
+        const orgInfo = getOrgInfo(n.domain);
+        document.getElementById("iname").innerHTML = n.name + `<span class="domain-badge">${n.domain}</span>`;
+        document.getElementById("iemail").textContent = n.id;
+        document.getElementById("isent").textContent = n.sent;
+        document.getElementById("irecv").textContent = n.received;
+        document.getElementById("iorg").innerHTML = orgInfo.name +
+            `<span class="org-type ${orgInfo.type}">${orgInfo.type}</span>`;
+
+        const connections = linkData.filter(l => l.source.id === n.id || l.target.id === n.id);
+        document.getElementById("iconn").textContent = connections.length;
+        document.getElementById("connections-list").innerHTML = "";
+
+        // Calculate organization breakdown for incoming emails
+        const incomingByOrg = {};
+        allData.edges.forEach(e => {
+            // Find edges where this node is the target (received email)
+            if (e.target === n.id) {
+                const senderNode = allData.nodes.find(nd => nd.id === e.source);
+                if (senderNode) {
+                    const senderOrg = getOrgInfo(senderNode.domain);
+                    const key = senderOrg.name;
+                    if (!incomingByOrg[key]) {
+                        incomingByOrg[key] = {count: 0, type: senderOrg.type};
+                    }
+                    incomingByOrg[key].count += e.weight;
+                }
+            }
+        });
+
+        // Sort by count and display top organizations
+        const sortedOrgs = Object.entries(incomingByOrg)
+            .sort((a, b) => b[1].count - a[1].count)
+            .slice(0, 10);
+
+        const orgListEl = document.getElementById("org-list");
+        const orgBreakdownEl = document.getElementById("org-breakdown");
+
+        if (sortedOrgs.length > 0) {
+            orgBreakdownEl.style.display = "block";
+            orgListEl.innerHTML = sortedOrgs.map(([name, data]) =>
+                `<div class="org-item">
+                    <span class="org-name">${name}</span>
+                    <span class="org-type ${data.type}">${data.type}</span>
+                    <span class="org-count">${data.count}</span>
+                </div>`
+            ).join("");
+        } else {
+            orgBreakdownEl.style.display = "none";
+        }
+
+        // Set up person-specific corporate/think tank buttons
+        const firstName = n.name.split(' ')[0];
+        document.getElementById("corporate-name").textContent = firstName;
+        document.getElementById("thinktank-name").textContent = firstName;
+        document.getElementById("correspondent-panel-title").innerHTML =
+            `<span class="clickable-name" onclick="window.open('https://www.toxicdocs.org/search?q=' + encodeURIComponent('"${n.id}"'), '_blank')">${n.name}</span>'s Correspondents`;
+        document.getElementById("correspondent-panel").style.display = "block";
+        document.getElementById("person-correspondents").style.display = "none";
+
+        document.getElementById("info").style.display = "block";
+    }
+
+    function hideInfo() {
+        document.getElementById("info").style.display = "none";
+        document.getElementById("correspondent-panel").style.display = "none";
+        displayedNode = null;
+    }
+
+    function lockNode(n) {
+        lockedNode = n;
+        showInfo(n);
+        document.getElementById("info").classList.add("locked");
+        document.getElementById("clear-btn").style.display = "block";
+
+        // Show connections list
+        const connections = linkData
+            .filter(l => l.source.id === n.id || l.target.id === n.id)
+            .map(l => {
+                const other = l.source.id === n.id ? l.target : l.source;
+                return { node: other, weight: l.weight };
+            })
+            .sort((a, b) => b.weight - a.weight);
+
+        const listEl = document.getElementById("connections-list");
+        listEl.innerHTML = connections.slice(0, 10).map(c =>
+            `<div class="conn-item" data-id="${c.node.id}">${c.node.name} (${c.weight})</div>`
+        ).join("");
+
+        listEl.querySelectorAll('.conn-item').forEach(el => {
+            el.onclick = () => {
+                const target = nodeById.get(el.dataset.id);
+                if (target) {
+                    if (isolateMode) {
+                        selectConnectionNode(target);
+                    } else {
+                        lockNode(target);
+                    }
+                }
+            };
+        });
+
+        draw();
+
+        // Zoom to node
+        const scale = 2;
+        const tx = width / 2 - n.x * scale;
+        const ty = height / 2 - n.y * scale;
+        d3.select(canvas).transition().duration(500).call(
+            zoom.transform,
+            d3.zoomIdentity.translate(tx, ty).scale(scale)
+        );
+    }
+
+    function unlockNode() {
+        lockedNode = null;
+        hoveredNode = null;
+        document.getElementById("info").classList.remove("locked");
+        document.getElementById("clear-btn").style.display = "none";
+        hideInfo();
+        draw();
+    }
+
+    // Search - searches ALL data, not just visible nodes
+    // Check if a name looks like a real person's name (2-3 proper words)
+    function isCoherentName(name) {
+        if (!name) return false;
+        const words = name.trim().split(/\s+/);
+        // Must have 2-4 words
+        if (words.length < 2 || words.length > 4) return false;
+        // Each word should be 2+ chars and mostly letters
+        for (const w of words) {
+            if (w.length < 2) return false;
+            // Allow letters, hyphens, apostrophes
+            if (!/^[A-Za-z][A-Za-z'-]*$/.test(w)) return false;
+        }
+        return true;
+    }
+
+    document.getElementById("search").addEventListener("input", e => {
+        const q = e.target.value.toLowerCase().trim();
+        const res = document.getElementById("results");
+        res.innerHTML = "";
+        if (q.length < 2) return;
+
+        // Search all nodes - filter for coherent names only
+        const matches = allData.nodes
+            .filter(n => {
+                const matchesQuery = n.id.toLowerCase().includes(q) || n.name.toLowerCase().includes(q);
+                return matchesQuery && isCoherentName(n.name);
+            })
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 15);
+
+        matches.forEach(m => {
+            const inView = nodeById.has(m.id);
+            const div = document.createElement("div");
+            div.className = "result";
+            div.innerHTML = `${m.name} <small>(${m.count})${inView ? '' : ' - click to add'}</small>`;
+            div.onclick = () => {
+                document.getElementById("search").value = "";
+                res.innerHTML = "";
+
+                if (inView) {
+                    // Already visible, just lock it
+                    lockNode(nodeById.get(m.id));
+                } else {
+                    // Add this node and its connections to the view
+                    addNodeToView(m);
+                }
+            };
+            res.appendChild(div);
+        });
+    });
+
+    function addNodeToView(nodeInfo) {
+        // Add the node
+        const newNode = {
+            ...nodeInfo,
+            x: width / 2 + (Math.random() - 0.5) * 200,
+            y: height / 2 + (Math.random() - 0.5) * 200,
+            vx: 0,
+            vy: 0,
+            r: 5
+        };
+        nodeData.push(newNode);
+        nodeById.set(newNode.id, newNode);
+
+        // Add edges to existing visible nodes
+        allData.edges.forEach(e => {
+            if (e.source === newNode.id && nodeById.has(e.target)) {
+                linkData.push({
+                    source: newNode,
+                    target: nodeById.get(e.target),
+                    weight: e.weight
+                });
+            } else if (e.target === newNode.id && nodeById.has(e.source)) {
+                linkData.push({
+                    source: nodeById.get(e.source),
+                    target: newNode,
+                    weight: e.weight
+                });
+            }
+        });
+
+        document.getElementById("nc").textContent = nodeData.length;
+        document.getElementById("ec").textContent = linkData.length;
+
+        // Quick simulation to position the new node
+        const simulation = d3.forceSimulation(nodeData)
+            .force("link", d3.forceLink(linkData).id(d => d.id).distance(60).strength(0.2))
+            .force("charge", d3.forceManyBody().strength(-50))
+            .force("collision", d3.forceCollide().radius(d => d.r + 2))
+            .stop();
+
+        for (let i = 0; i < 50; i++) simulation.tick();
+
+        lockNode(newNode);
+    }
+
+    // Filter slider
+    const slider = document.getElementById("filter");
+    slider.oninput = () => document.getElementById("fv").textContent = slider.value;
+    slider.onchange = () => {
+        unlockNode();
+        applyFilters();
+    };
+
+    // Government only toggle
+    document.getElementById("gov-only-checkbox").onchange = () => {
+        unlockNode();
+        applyFilters();
+    };
+
+    function applyFilters() {
+        const minCount = +document.getElementById("filter").value;
+        const govOnly = document.getElementById("gov-only-checkbox").checked;
+
+        // Filter nodes
+        let nodes = allData.nodes.filter(n => n.count >= minCount);
+        if (govOnly) {
+            nodes = nodes.filter(n => n.domain.endsWith('.gov'));
+        }
+
+        const ids = new Set(nodes.map(n => n.id));
+        const edges = allData.edges.filter(e => ids.has(e.source) && ids.has(e.target));
+
+        document.getElementById("nc").textContent = nodes.length;
+        document.getElementById("ec").textContent = edges.length;
+
+        nodeData = nodes.map(n => ({
+            ...n,
+            x: width / 2 + (Math.random() - 0.5) * width * 0.8,
+            y: height / 2 + (Math.random() - 0.5) * height * 0.8,
+            vx: 0, vy: 0, r: 5
+        }));
+
+        nodeById = new Map(nodeData.map(n => [n.id, n]));
+
+        linkData = edges.map(e => ({
+            source: nodeById.get(e.source),
+            target: nodeById.get(e.target),
+            weight: e.weight
+        })).filter(l => l.source && l.target);
+
+        runSimulation();
+    }
+
+    // Buttons
+    document.getElementById("clear-btn").onclick = () => {
+        if (isolateMode) {
+            exitIsolateMode();
+        } else {
+            unlockNode();
+        }
+    };
+
+    document.getElementById("toxicdocs-btn").onclick = () => {
+        window.open("https://www.toxicdocs.org/search?q=" + encodeURIComponent('"' + currentEmail + '"'), "_blank");
+    };
+
+    // Store reference to currently displayed node for buttons
+    let displayedNode = null;
+
+    document.getElementById("show-corporate-btn").addEventListener('click', () => {
+        const node = lockedNode || displayedNode;
+        if (!node) {
+            alert('Please select a person first');
+            return;
+        }
+        showPersonCorrespondents(node, "industry");
+    });
+
+    document.getElementById("show-thinktank-btn").addEventListener('click', () => {
+        const node = lockedNode || displayedNode;
+        if (!node) {
+            alert('Please select a person first');
+            return;
+        }
+        showPersonCorrespondents(node, "thinktank");
+    });
+
+    function showPersonCorrespondents(person, orgType) {
+        const correspondentsEl = document.getElementById("person-correspondents");
+        const titleEl = document.getElementById("correspondents-title");
+        const listEl = document.getElementById("correspondents-list");
+        const typeName = orgType === "industry" ? "Corporate" : "Think Tank & Advocacy";
+
+        // Find all correspondents of this person from the target org type
+        const correspondents = {};
+        allData.edges.forEach(e => {
+            let otherEmail = null;
+            if (e.source === person.id) otherEmail = e.target;
+            else if (e.target === person.id) otherEmail = e.source;
+
+            if (otherEmail) {
+                const otherNode = allData.nodes.find(n => n.id === otherEmail);
+                if (otherNode) {
+                    const org = getOrgInfo(otherNode.domain);
+                    if (org.type === orgType) {
+                        const key = org.name;
+                        if (!correspondents[key]) {
+                            correspondents[key] = {org: org.name, people: [], totalWeight: 0};
+                        }
+                        correspondents[key].people.push({node: otherNode, weight: e.weight});
+                        correspondents[key].totalWeight += e.weight;
+                    }
+                }
+            }
+        });
+
+        const sorted = Object.values(correspondents).sort((a, b) => b.totalWeight - a.totalWeight);
+
+        if (sorted.length === 0) {
+            correspondentsEl.style.display = "block";
+            titleEl.textContent = `${person.name.split(' ')[0]}'s ${typeName} Correspondents`;
+            listEl.innerHTML = '<div style="color:#888;font-size:11px;">No correspondents found</div>';
+            return;
+        }
+
+        correspondentsEl.style.display = "block";
+        titleEl.textContent = `${person.name.split(' ')[0]}'s ${typeName} Correspondents`;
+        titleEl.style.color = orgType === "industry" ? "#c62828" : "#6a1b9a";
+
+        let html = '';
+        sorted.forEach(group => {
+            html += `<div style="margin-bottom:8px;">
+                <div style="font-weight:bold;color:${orgType === 'industry' ? '#c62828' : '#6a1b9a'};font-size:11px;cursor:pointer;"
+                     onclick="window.open('https://www.toxicdocs.org/search?q=' + encodeURIComponent('&quot;${group.org}&quot;'), '_blank')">
+                    ${group.org} 🔍
+                </div>`;
+            group.people.sort((a, b) => b.weight - a.weight).slice(0, 5).forEach(p => {
+                const displayName = isCoherentName(p.node.name) ? p.node.name : p.node.id.split('@')[0];
+                html += `<div class="person-item" style="padding:3px 8px;">
+                    <span class="person-name" style="cursor:pointer;" onclick="window.open('https://www.toxicdocs.org/search?q=' + encodeURIComponent('&quot;${p.node.id}&quot;'), '_blank')">${displayName}</span>
+                    <small>(${p.weight})</small>
+                </div>`;
+            });
+            if (group.people.length > 5) {
+                html += `<div style="color:#666;font-size:10px;padding-left:8px;">...and ${group.people.length - 5} more</div>`;
+            }
+            html += '</div>';
+        });
+
+        listEl.innerHTML = html;
+
+        // Also highlight these correspondents on the graph
+        selectedIndustry = orgType;
+        industryMode = true;
+
+        // Add correspondent nodes to view if not already there
+        sorted.forEach(group => {
+            group.people.forEach(p => {
+                if (!nodeById.has(p.node.id)) {
+                    // Add node to view
+                    const newNode = {
+                        ...p.node,
+                        x: person.x + (Math.random() - 0.5) * 200,
+                        y: person.y + (Math.random() - 0.5) * 200,
+                        vx: 0, vy: 0, r: 5
+                    };
+                    nodeData.push(newNode);
+                    nodeById.set(newNode.id, newNode);
+
+                    // Add edge
+                    linkData.push({
+                        source: nodeById.get(person.id),
+                        target: newNode,
+                        weight: p.weight
+                    });
+                }
+            });
+        });
+
+        document.getElementById("nc").textContent = nodeData.length;
+        document.getElementById("ec").textContent = linkData.length;
+        draw();
+    }
+
+    document.getElementById("list-connections-btn").onclick = () => {
+        if (!lockedNode) return;
+
+        // Get ALL connections from original data
+        const allConns = allData.edges
+            .filter(e => e.source === lockedNode.id || e.target === lockedNode.id)
+            .map(e => {
+                const otherId = e.source === lockedNode.id ? e.target : e.source;
+                const other = allData.nodes.find(n => n.id === otherId);
+                return { id: otherId, name: other ? other.name : otherId, weight: e.weight };
+            })
+            .sort((a, b) => b.weight - a.weight);
+
+        const listEl = document.getElementById("connections-list");
+        listEl.innerHTML = `<div style="font-size:10px;color:#666;margin-bottom:5px;">${allConns.length} total connections</div>`;
+
+        allConns.slice(0, 30).forEach(c => {
+            const div = document.createElement("div");
+            div.className = "conn-item";
+            div.textContent = `${c.name} (${c.weight})`;
+            div.onclick = () => {
+                window.open("https://www.toxicdocs.org/search?q=" + encodeURIComponent(`"${lockedNode.id}" "${c.id}"`), "_blank");
+            };
+            listEl.appendChild(div);
+        });
+    };
+
+    // Isolate mode
+    document.getElementById("isolate-btn").onclick = () => {
+        if (!lockedNode) return;
+
+        if (isolateMode) {
+            exitIsolateMode();
+        } else {
+            enterIsolateMode(lockedNode);
+        }
+    };
+
+    function enterIsolateMode(centralNode) {
+        isolateMode = true;
+        isolateCentralNode = centralNode;
+        document.getElementById("isolate-btn").classList.add("active");
+        document.getElementById("isolate-btn").textContent = "Unlock Network";
+
+        // Get all connections from full data
+        const connectedIds = new Set([centralNode.id]);
+        allData.edges.forEach(e => {
+            if (e.source === centralNode.id) connectedIds.add(e.target);
+            if (e.target === centralNode.id) connectedIds.add(e.source);
+        });
+
+        // Build isolated network
+        const isolatedNodes = allData.nodes.filter(n => connectedIds.has(n.id));
+
+        nodeData = isolatedNodes.map(n => ({
+            ...n,
+            x: n.id === centralNode.id ? width / 2 : width / 2 + (Math.random() - 0.5) * 400,
+            y: n.id === centralNode.id ? height / 2 : height / 2 + (Math.random() - 0.5) * 400,
+            vx: 0,
+            vy: 0,
+            r: 5
+        }));
+
+        nodeById = new Map(nodeData.map(n => [n.id, n]));
+
+        linkData = allData.edges
+            .filter(e => e.source === centralNode.id || e.target === centralNode.id)
+            .filter(e => nodeById.has(e.source) && nodeById.has(e.target))
+            .map(e => ({
+                source: nodeById.get(e.source),
+                target: nodeById.get(e.target),
+                weight: e.weight
+            }));
+
+        document.getElementById("nc").textContent = nodeData.length;
+        document.getElementById("ec").textContent = linkData.length;
+
+        // Run simulation
+        const simulation = d3.forceSimulation(nodeData)
+            .force("link", d3.forceLink(linkData).id(d => d.id).distance(100).strength(0.3))
+            .force("charge", d3.forceManyBody().strength(-200))
+            .force("center", d3.forceCenter(width / 2, height / 2))
+            .force("collision", d3.forceCollide().radius(d => d.r + 5))
+            .stop();
+
+        for (let i = 0; i < 200; i++) simulation.tick();
+
+        // Keep central node centered
+        const cn = nodeById.get(centralNode.id);
+        cn.x = width / 2;
+        cn.y = height / 2;
+
+        lockedNode = cn;
+        draw();
+
+        // Fit to view
+        d3.select(canvas).transition().duration(500).call(
+            zoom.transform,
+            d3.zoomIdentity
+        );
+    }
+
+    function exitIsolateMode() {
+        isolateMode = false;
+        isolateCentralNode = null;
+        selectedConnectionNode = null;
+        document.getElementById("isolate-btn").classList.remove("active");
+        document.getElementById("isolate-btn").textContent = "Lock Network";
+        unlockNode();
+        render(+document.getElementById("filter").value);
+    }
+
+    // Zoom controls
+    document.getElementById("zoom-in").onclick = () => {
+        d3.select(canvas).transition().duration(200).call(zoom.scaleBy, 1.5);
+    };
+    document.getElementById("zoom-out").onclick = () => {
+        d3.select(canvas).transition().duration(200).call(zoom.scaleBy, 0.67);
+    };
+    document.getElementById("zoom-reset").onclick = () => {
+        d3.select(canvas).transition().duration(300).call(zoom.transform, d3.zoomIdentity);
+    };
+
+    // Industry mode
+    function updateIndustryGroups() {
+        industryGroups = {};
+        nodeData.forEach(n => {
+            const org = getOrgInfo(n.domain);
+            if (org.type === "industry" || org.type === "thinktank") {
+                if (!industryGroups[org.name]) {
+                    industryGroups[org.name] = {nodes: [], type: org.type};
+                }
+                industryGroups[org.name].nodes.push(n);
+            }
+        });
+
+        // Calculate centroids
+        Object.keys(industryGroups).forEach(name => {
+            const group = industryGroups[name];
+            if (group.nodes.length > 0) {
+                group.centroid = {
+                    x: group.nodes.reduce((s, n) => s + n.x, 0) / group.nodes.length,
+                    y: group.nodes.reduce((s, n) => s + n.y, 0) / group.nodes.length
+                };
+            }
+        });
+    }
+
+    function updateIndustryPanel(panelType) {
+        const isIndustry = panelType === "industry";
+        const listEl = document.getElementById(isIndustry ? "industry-list" : "thinktank-list");
+        const targetType = isIndustry ? "industry" : "thinktank";
+
+        // Count ALL people from each org in the full dataset
+        const orgCounts = {};
+        allData.nodes.forEach(n => {
+            const org = getOrgInfo(n.domain);
+            if (org.type === targetType) {
+                if (!orgCounts[org.name]) {
+                    orgCounts[org.name] = {count: 0, type: org.type};
+                }
+                orgCounts[org.name].count++;
+            }
+        });
+
+        const sorted = Object.entries(orgCounts)
+            .sort((a, b) => b[1].count - a[1].count);
+
+        const itemClass = isIndustry ? "industry-item" : "thinktank-item";
+
+        listEl.innerHTML = sorted.map(([name, data]) =>
+            `<div class="${itemClass}" data-org="${name}">
+                <span class="name">${name}</span>
+                <span class="count">${data.count}</span>
+                <button class="search-btn" data-org="${name}" title="Search ToxicDocs">🔍</button>
+            </div>`
+        ).join("");
+
+        listEl.querySelectorAll('.name').forEach(el => {
+            el.onclick = (e) => {
+                e.stopPropagation();
+                selectedIndustry = el.parentElement.dataset.org;
+                showIndustryPeople(selectedIndustry, panelType);
+                draw();
+            };
+        });
+
+        listEl.querySelectorAll('.search-btn').forEach(el => {
+            el.onclick = (e) => {
+                e.stopPropagation();
+                const orgName = el.dataset.org;
+                window.open("https://www.toxicdocs.org/search?q=" + encodeURIComponent('"' + orgName + '"'), "_blank");
+            };
+        });
+    }
+
+    function showIndustryPeople(orgName, panelType) {
+        const isIndustry = panelType === "industry";
+        const peopleEl = document.getElementById(isIndustry ? "industry-people" : "thinktank-people");
+        const titleEl = document.getElementById(isIndustry ? "industry-people-title" : "thinktank-people-title");
+        const listEl = document.getElementById(isIndustry ? "industry-people-list" : "thinktank-people-list");
+
+        // Find ALL people from this organization in the full dataset
+        const allPeople = allData.nodes.filter(n => {
+            const org = getOrgInfo(n.domain);
+            return org.name === orgName;
+        }).sort((a, b) => b.count - a.count);
+
+        if (allPeople.length === 0) return;
+
+        peopleEl.style.display = "block";
+        titleEl.textContent = `${orgName} (${allPeople.length} people)`;
+
+        listEl.innerHTML = allPeople.map(n => {
+            const inView = nodeById.has(n.id);
+            const coherent = isCoherentName(n.name);
+            const displayName = coherent ? n.name : n.id.split('@')[0];
+            return `<div class="person-item" data-id="${n.id}" data-email="${n.id}" style="${inView ? 'color:#4fc3f7;' : ''}">
+                <span class="person-name">${displayName}</span>
+                <small>(${n.count})${inView ? '' : ' +'}</small>
+                <button class="search-btn" data-email="${n.id}" title="Search ToxicDocs">🔍</button>
+            </div>`;
+        }).join("");
+
+        listEl.querySelectorAll('.person-name').forEach(el => {
+            el.onclick = (e) => {
+                e.stopPropagation();
+                const email = el.parentElement.dataset.email;
+                window.open("https://www.toxicdocs.org/search?q=" + encodeURIComponent('"' + email + '"'), "_blank");
+            };
+        });
+
+        listEl.querySelectorAll('.search-btn').forEach(el => {
+            el.onclick = (e) => {
+                e.stopPropagation();
+                const email = el.dataset.email;
+                window.open("https://www.toxicdocs.org/search?q=" + encodeURIComponent('"' + email + '"'), "_blank");
+            };
+        });
+    }
+
+    // Agency filter
+    function populateAgencyFilter() {
+        const agencies = {};
+        allData.nodes.forEach(n => {
+            const org = getOrgInfo(n.domain);
+            if (org.type === "government") {
+                if (!agencies[org.name]) agencies[org.name] = 0;
+                agencies[org.name]++;
+            }
+        });
+
+        const sorted = Object.entries(agencies)
+            .sort((a, b) => b[1] - a[1]);
+
+        const select = document.getElementById("agency-select");
+        select.innerHTML = '<option value="">All agencies</option>' +
+            sorted.map(([name, count]) =>
+                `<option value="${name}">${name} (${count})</option>`
+            ).join("");
+    }
+
+    document.getElementById("agency-select").onchange = (e) => {
+        currentAgencyFilter = e.target.value;
+        if (currentAgencyFilter) {
+            // Filter to show only nodes from this agency
+            const agencyNodes = allData.nodes.filter(n => {
+                const org = getOrgInfo(n.domain);
+                return org.name === currentAgencyFilter;
+            });
+
+            const agencyIds = new Set(agencyNodes.map(n => n.id));
+
+            // Also include nodes connected to agency nodes
+            const connectedIds = new Set(agencyIds);
+            allData.edges.forEach(e => {
+                if (agencyIds.has(e.source)) connectedIds.add(e.target);
+                if (agencyIds.has(e.target)) connectedIds.add(e.source);
+            });
+
+            // Build filtered view
+            nodeData = allData.nodes
+                .filter(n => connectedIds.has(n.id))
+                .map(n => ({
+                    ...n,
+                    x: width / 2 + (Math.random() - 0.5) * width * 0.8,
+                    y: height / 2 + (Math.random() - 0.5) * height * 0.8,
+                    vx: 0,
+                    vy: 0,
+                    r: 5,
+                    isAgency: agencyIds.has(n.id)
+                }));
+
+            nodeById = new Map(nodeData.map(n => [n.id, n]));
+
+            linkData = allData.edges
+                .filter(e => nodeById.has(e.source) && nodeById.has(e.target))
+                .map(e => ({
+                    source: nodeById.get(e.source),
+                    target: nodeById.get(e.target),
+                    weight: e.weight
+                }));
+
+            document.getElementById("nc").textContent = nodeData.length;
+            document.getElementById("ec").textContent = linkData.length;
+
+            runSimulation();
+        } else {
+            render(+document.getElementById("filter").value);
+        }
+        unlockNode();
+    };
+
+    // Resize
+    window.addEventListener('resize', () => {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        draw();
+    });
+    </script>
+</body>
+</html>
