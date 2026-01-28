@@ -1205,7 +1205,7 @@
             "");
 
         // Fire in background - user can keep browsing
-        fetch('/api/fetch-correspondence', {
+        fetch('api/fetch-correspondence', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ email1: e1, email2: e2, name1: e1, name2: e2 })
