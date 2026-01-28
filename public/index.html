@@ -62,6 +62,43 @@
         #clear-btn:hover { background: #888; }
         #toxicdocs-btn { background: #ff9800; }
         #toxicdocs-btn:hover { background: #ffb74d; }
+        #toxicdocs-pair-btn { display: none; background: #ff9800; }
+        #toxicdocs-pair-btn:hover { background: #ffb74d; }
+        #download-correspondence-btn { display: none; background: #ff9800; }
+        #download-correspondence-btn:hover { background: #ffb74d; }
+
+        #zip-toast {
+            position: fixed; top: 20px; right: 20px;
+            background: rgba(20,20,20,0.97); border: 1px solid #ff9800;
+            border-radius: 10px; padding: 14px 18px; z-index: 100;
+            color: #fff; font-size: 13px; max-width: 340px;
+            display: none; box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+        #zip-toast.done { border-color: #4caf50; }
+        #zip-toast.error { border-color: #f44336; }
+        #zip-toast-title {
+            font-weight: 700; margin-bottom: 6px; font-size: 12px;
+            color: #ff9800; text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        #zip-toast.done #zip-toast-title { color: #4caf50; }
+        #zip-toast.error #zip-toast-title { color: #f44336; }
+        #zip-toast-msg { color: #ccc; line-height: 1.4; }
+        #zip-toast-msg a { color: #4fc3f7; text-decoration: none; font-weight: 600; }
+        #zip-toast-msg a:hover { text-decoration: underline; }
+        #zip-toast-close {
+            position: absolute; top: 8px; right: 10px;
+            background: none; border: none; color: #666; cursor: pointer;
+            font-size: 16px; line-height: 1;
+        }
+        #zip-toast-close:hover { color: #fff; }
+        @keyframes zip-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        #zip-toast-spinner {
+            display: inline-block; animation: zip-pulse 1.5s ease-in-out infinite;
+            margin-right: 6px;
+        }
         #list-connections-btn { background: #00897b; color: #fff; }
         #list-connections-btn:hover { background: #26a69a; }
 
@@ -184,10 +221,47 @@
         #correspondent-panel h3 { margin: 0 0 15px; color: #4fc3f7; font-size: 16px; }
         #correspondent-panel h3 .clickable-name { cursor: pointer; text-decoration: underline; }
         #correspondent-panel h3 .clickable-name:hover { color: #81d4fa; }
+
+        #reorient-panel {
+            position: fixed; right: 80px;
+            background: rgba(20,20,20,0.95); border: 1px solid #4fc3f7;
+            border-radius: 12px; padding: 10px 20px; z-index: 15;
+            display: none; width: 280px;
+        }
+        #reorient-btn {
+            width: 100%; padding: 8px 10px;
+            background: #4fc3f7; color: #000; border: none; border-radius: 6px;
+            cursor: pointer; font-weight: 600; font-size: 12px;
+        }
+        #reorient-btn:hover { background: #81d4fa; }
+
+        .report-mistake {
+            display: inline-block; margin-left: 6px;
+            width: 18px; height: 18px; line-height: 18px; text-align: center;
+            background: #444; border-radius: 50%; color: #aaa;
+            font-size: 11px; font-weight: 700; text-decoration: none;
+            vertical-align: middle; cursor: pointer;
+            position: relative;
+        }
+        .report-mistake:hover { background: #ff9800; color: #000; }
+        .report-mistake .report-tip {
+            display: none; position: absolute; bottom: 24px; left: 50%;
+            transform: translateX(-50%);
+            background: rgba(20,20,20,0.97); border: 1px solid #555;
+            border-radius: 6px; padding: 6px 10px; white-space: nowrap;
+            color: #ccc; font-size: 11px; pointer-events: none;
+        }
+        .report-mistake:hover .report-tip { display: block; }
     </style>
 </head>
 <body>
     <div id="loading">Loading email network...<br><small style="color:#888">(this takes about 30 seconds)</small></div>
+
+    <div id="zip-toast">
+        <button id="zip-toast-close">&times;</button>
+        <div id="zip-toast-title">Preparing ZIP</div>
+        <div id="zip-toast-msg"></div>
+    </div>
     <canvas id="canvas"></canvas>
 
     <div id="controls" style="display:none">
@@ -259,6 +333,8 @@
             <div id="org-list"></div>
         </div>
         <button class="btn" id="toxicdocs-btn">Search ToxicDocs</button>
+        <button class="btn" id="toxicdocs-pair-btn">Search Correspondence on ToxicDocs</button>
+        <button class="btn" id="download-correspondence-btn">Download Correspondence PDFs</button>
         <button class="btn" id="list-connections-btn">List Connections</button>
         <div id="connections-list"></div>
         <button class="btn" id="clear-btn">Clear Selection</button>
@@ -278,6 +354,10 @@
         </div>
     </div>
 
+    <div id="reorient-panel">
+        <button id="reorient-btn"></button>
+    </div>
+
     <div id="isolate-toggle">
         <button id="isolate-btn">Lock Network</button>
     </div>
@@ -287,6 +367,7 @@
         <button id="zoom-out">−</button>
         <button id="zoom-reset">⟲</button>
     </div>
+
 
     <script>
     const canvas = document.getElementById('canvas');
@@ -306,6 +387,7 @@
     let isolateMode = false;
     let isolateCentralNode = null;
     let selectedConnectionNode = null;  // Secondary selection in isolate mode
+    // doc_ids no longer pre-tracked; MongoDB is queried at download time
     let currentEmail = "";
     let industryMode = false;
     let industryGroups = {};  // org name -> {nodes: [], centroid: {x, y}}
@@ -321,6 +403,7 @@
         "epa.qov": {name: "EPA", type: "government"},
         "epa.qovl": {name: "EPA", type: "government"},
         "cpa.gov": {name: "EPA", type: "government"},
+        "doi.gov": {name: "Dept. of the Interior", type: "government"},
         "ios.doi.gov": {name: "DOI - Office of Secretary", type: "government"},
         "sol.doi.gov": {name: "DOI - Solicitor", type: "government"},
         "blm.gov": {name: "Bureau of Land Management", type: "government"},
@@ -653,11 +736,48 @@
         return null;
     }
 
+    function distToSegment(px, py, x1, y1, x2, y2) {
+        const dx = x2 - x1, dy = y2 - y1;
+        const lenSq = dx * dx + dy * dy;
+        if (lenSq === 0) return Math.sqrt((px - x1) ** 2 + (py - y1) ** 2);
+        let t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
+        t = Math.max(0, Math.min(1, t));
+        const projX = x1 + t * dx, projY = y1 + t * dy;
+        return Math.sqrt((px - projX) ** 2 + (py - projY) ** 2);
+    }
+
+    function getEdgeAtPoint(x, y) {
+        const px = (x - transform.x) / transform.k;
+        const py = (y - transform.y) / transform.k;
+        const threshold = 20 / transform.k;
+
+        let closest = null;
+        let closestDist = Infinity;
+
+        for (const link of linkData) {
+            const d = distToSegment(px, py, link.source.x, link.source.y, link.target.x, link.target.y);
+            if (d < threshold && d < closestDist) {
+                closestDist = d;
+                closest = link;
+            }
+        }
+        return closest;
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { hideReorientPanel(); }
+    });
+
     canvas.addEventListener('mousemove', (e) => {
         const node = getNodeAtPoint(e.clientX, e.clientY);
         if (node !== hoveredNode) {
             hoveredNode = node;
-            canvas.style.cursor = node ? 'pointer' : 'default';
+            if (node) {
+                canvas.style.cursor = 'pointer';
+            } else {
+                const edge = getEdgeAtPoint(e.clientX, e.clientY);
+                canvas.style.cursor = edge ? 'pointer' : 'default';
+            }
             if (isolateMode) {
                 // In isolate mode, just update cursor, don't change display
                 // (wait for click to select)
@@ -666,6 +786,10 @@
                 else hideInfo();
             }
             if (!isolateMode) draw();  // Only redraw on hover in normal mode
+        } else if (!node) {
+            // No node hovered, check edge hover for cursor
+            const edge = getEdgeAtPoint(e.clientX, e.clientY);
+            canvas.style.cursor = edge ? 'pointer' : 'default';
         }
     });
 
@@ -675,14 +799,14 @@
             if (isolateMode) {
                 selectConnectionNode(node);
             } else {
-                lockNode(node);
+                enterIsolateMode(node);
             }
-        } else if (lockedNode && !isolateMode) {
-            unlockNode();
-        } else if (isolateMode && selectedConnectionNode) {
-            selectedConnectionNode = null;
-            showInfo(isolateCentralNode);
-            draw();
+        } else {
+            if (isolateMode) {
+                exitIsolateMode();
+            } else if (lockedNode) {
+                unlockNode();
+            }
         }
     }
 
@@ -717,21 +841,52 @@
             // Clicked on central node - clear selection
             selectedConnectionNode = null;
             showInfo(isolateCentralNode);
+            hideReorientPanel();
+            document.getElementById("toxicdocs-pair-btn").style.display = "none";
+            document.getElementById("download-correspondence-btn").style.display = "none";
         } else {
             // Clicked on a connection
             selectedConnectionNode = node;
             showInfo(node);
+            showReorientPanel(node);
+            document.getElementById("toxicdocs-pair-btn").style.display = "block";
+
+            // Show download button (will query MongoDB at click time for actual count)
+            const dlBtn = document.getElementById("download-correspondence-btn");
+            dlBtn.textContent = "Download Correspondence as ZIP";
+            dlBtn.style.display = "block";
         }
         document.getElementById("info").classList.add("locked");
         document.getElementById("clear-btn").style.display = "block";
         draw();
     }
 
+
+    function showReorientPanel(node) {
+        const panel = document.getElementById("reorient-panel");
+        const btn = document.getElementById("reorient-btn");
+        const label = node.name || node.id;
+        btn.textContent = "Re-orient → " + label;
+        btn.onclick = () => {
+            hideReorientPanel();
+            enterIsolateMode(node);
+        };
+        const corrPanel = document.getElementById("correspondent-panel");
+        const rect = corrPanel.getBoundingClientRect();
+        panel.style.top = (rect.bottom + 6) + "px";
+        panel.style.display = "block";
+    }
+
+    function hideReorientPanel() {
+        document.getElementById("reorient-panel").style.display = "none";
+    }
+
     function showInfo(n) {
         currentEmail = n.id;
         displayedNode = n;  // Track for button handlers
         const orgInfo = getOrgInfo(n.domain);
-        document.getElementById("iname").innerHTML = n.name + `<span class="domain-badge">${n.domain}</span>`;
+        document.getElementById("iname").innerHTML = n.name + `<span class="domain-badge">${n.domain}</span>` +
+            `<a class="report-mistake" href="mailto:mc2028@cumc.columbia.edu?subject=${encodeURIComponent('Mistake Found: ' + n.name)}">?<span class="report-tip">If you see a typo here, please report it to us!</span></a>`;
         document.getElementById("iemail").textContent = n.id;
         document.getElementById("isent").textContent = n.sent;
         document.getElementById("irecv").textContent = n.received;
@@ -795,6 +950,8 @@
     function hideInfo() {
         document.getElementById("info").style.display = "none";
         document.getElementById("correspondent-panel").style.display = "none";
+        document.getElementById("toxicdocs-pair-btn").style.display = "none";
+        document.getElementById("download-correspondence-btn").style.display = "none";
         displayedNode = null;
     }
 
@@ -825,7 +982,7 @@
                     if (isolateMode) {
                         selectConnectionNode(target);
                     } else {
-                        lockNode(target);
+                        enterIsolateMode(target);
                     }
                 }
             };
@@ -893,8 +1050,8 @@
                 res.innerHTML = "";
 
                 if (inView) {
-                    // Already visible, just lock it
-                    lockNode(nodeById.get(m.id));
+                    // Already visible, enter isolate mode
+                    enterIsolateMode(nodeById.get(m.id));
                 } else {
                     // Add this node and its connections to the view
                     addNodeToView(m);
@@ -946,7 +1103,7 @@
 
         for (let i = 0; i < 50; i++) simulation.tick();
 
-        lockNode(newNode);
+        enterIsolateMode(newNode);
     }
 
     // Filter slider
@@ -1008,6 +1165,69 @@
 
     document.getElementById("toxicdocs-btn").onclick = () => {
         window.open("https://www.toxicdocs.org/search?q=" + encodeURIComponent('"' + currentEmail + '"'), "_blank");
+    };
+
+    document.getElementById("toxicdocs-pair-btn").onclick = () => {
+        if (isolateCentralNode && selectedConnectionNode) {
+            const q = '"' + isolateCentralNode.id + '" "' + selectedConnectionNode.id + '"';
+            window.open("https://www.toxicdocs.org/search?q=" + encodeURIComponent(q), "_blank");
+        }
+    };
+
+    // Toast notification helpers
+    let zipToastTimer = null;
+    function showZipToast(title, msg, state) {
+        const toast = document.getElementById("zip-toast");
+        toast.className = state || "";
+        toast.style.display = "block";
+        document.getElementById("zip-toast-title").textContent = title;
+        document.getElementById("zip-toast-msg").innerHTML = msg;
+        clearTimeout(zipToastTimer);
+        if (state === "done") {
+            zipToastTimer = setTimeout(() => { toast.style.display = "none"; }, 30000);
+        }
+    }
+    document.getElementById("zip-toast-close").onclick = () => {
+        document.getElementById("zip-toast").style.display = "none";
+        clearTimeout(zipToastTimer);
+    };
+
+    document.getElementById("download-correspondence-btn").onclick = () => {
+        if (!isolateCentralNode || !selectedConnectionNode) return;
+        const e1 = isolateCentralNode.id;
+        const e2 = selectedConnectionNode.id;
+        const n1 = isolateCentralNode.name || e1;
+        const n2 = selectedConnectionNode.name || e2;
+
+        showZipToast("Preparing ZIP",
+            '<span id="zip-toast-spinner">&#9679;</span> Finding all documents between <b>' +
+            n1 + '</b> and <b>' + n2 + '</b>...<br><small style="color:#888">This may take a few minutes. You can keep browsing.</small>',
+            "");
+
+        // Fire in background - user can keep browsing
+        fetch('/api/fetch-correspondence', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ email1: e1, email2: e2, name1: e1, name2: e2 })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success && data.download_url) {
+                showZipToast("ZIP Ready",
+                    data.doc_count + ' PDFs between <b>' + n1 + '</b> and <b>' + n2 +
+                    '</b>.<br><a href="' + data.download_url + '" target="_blank">Download ZIP</a>',
+                    "done");
+            } else if (data.success) {
+                showZipToast("No Documents",
+                    'No documents found with both email addresses.', "error");
+            } else {
+                showZipToast("Error",
+                    (data.error || "Unknown error"), "error");
+            }
+        })
+        .catch(err => {
+            showZipToast("Error", err.message, "error");
+        });
     };
 
     // Store reference to currently displayed node for buttons
@@ -1221,12 +1441,18 @@
         cn.y = height / 2;
 
         lockedNode = cn;
+        selectedConnectionNode = null;
+        hideReorientPanel();
+        showInfo(cn);
+        document.getElementById("info").classList.add("locked");
+        document.getElementById("clear-btn").style.display = "block";
         draw();
 
-        // Fit to view
+        // Zoom in centered on the network
+        const isoScale = 1.5;
         d3.select(canvas).transition().duration(500).call(
             zoom.transform,
-            d3.zoomIdentity
+            d3.zoomIdentity.translate(width / 2 * (1 - isoScale), height / 2 * (1 - isoScale)).scale(isoScale)
         );
     }
 
@@ -1234,10 +1460,13 @@
         isolateMode = false;
         isolateCentralNode = null;
         selectedConnectionNode = null;
+        hideReorientPanel();
         document.getElementById("isolate-btn").classList.remove("active");
         document.getElementById("isolate-btn").textContent = "Lock Network";
+        document.getElementById("toxicdocs-pair-btn").style.display = "none";
+        document.getElementById("download-correspondence-btn").style.display = "none";
         unlockNode();
-        render(+document.getElementById("filter").value);
+        applyFilters();
     }
 
     // Zoom controls

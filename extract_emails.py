@@ -59,8 +59,8 @@ def extract_name_from_email(email):
     name = re.sub(r'[._]', ' ', local_clean)
     parts = [p for p in name.split() if p]  # Filter empty parts
 
-    # For .gov emails, format is typically lastname.firstname - reverse it
-    if norm_domain.endswith('.gov') and len(parts) == 2:
+    # For EPA emails, format is typically lastname.firstname - reverse it
+    if norm_domain == 'epa.gov' and len(parts) == 2:
         # Check if both parts look like name parts (not numbers, reasonable length)
         if (parts[0].replace('-', '').replace("'", '').isalpha() and
             parts[1].replace('-', '').replace("'", '').isalpha() and
@@ -198,11 +198,7 @@ def normalize_domain(domain):
 
     # Other common OCR fixes
     ocr_fixes = {
-        # DOI
-        'ios.doi.gov': 'doi.gov',
-        'sol.doi.gov': 'doi.gov',
         # BLM
-        '.blm.gov': 'blm.gov',
         'b1m.gov': 'blm.gov',
         # General .gov OCR errors (l instead of nothing at end)
         'govl': 'gov',
@@ -233,6 +229,18 @@ def normalize_domain(domain):
         return domain[:-3] + 'gov'
 
     return domain
+
+
+def normalize_email(email):
+    """Normalize an email address: fix domain OCR errors, replace hyphens with
+    periods in .gov local parts (gov systems don't use hyphens in addresses)."""
+    if '@' not in email:
+        return email
+    local, domain = email.split('@', 1)
+    domain = normalize_domain(domain)
+    if domain.endswith('.gov'):
+        local = local.replace('-', '.')
+    return f"{local}@{domain}"
 
 
 def canonicalize_email(email):
@@ -352,6 +360,12 @@ def parse_email_document(text):
     if not result['from'] and not result['to']:
         return None
 
+    # Normalize all extracted emails (domain OCR fixes + .gov hyphen-to-period)
+    result['from'] = {normalize_email(e) for e in result['from']}
+    result['to'] = {normalize_email(e) for e in result['to']}
+    result['cc'] = {normalize_email(e) for e in result['cc']}
+    result['display_names'] = {normalize_email(k): v for k, v in result['display_names'].items()}
+
     return result
 
 
@@ -372,7 +386,7 @@ def build_email_network(db, max_docs=None):
 
     # Track nodes (email addresses) and edges (correspondence)
     nodes = {}  # email -> {count, sent_count, received_count, domains, years}
-    edges = defaultdict(lambda: {'weight': 0, 'years': set()})  # (from, to) -> {weight, years}
+    edges = defaultdict(lambda: {'weight': 0, 'years': set(), 'doc_ids': set()})  # (from, to) -> {weight, years, doc_ids}
     display_names = {}  # email -> display name (best one found)
 
     doc_count = 0
@@ -387,6 +401,7 @@ def build_email_network(db, max_docs=None):
 
         text = doc.get('text', '')
         year = doc.get('year')
+        hash_id = doc.get('hash_id')
 
         parsed = parse_email_document(text)
         if not parsed:
@@ -441,6 +456,8 @@ def build_email_network(db, max_docs=None):
                     edges[edge_key]['weight'] += 1
                     if year:
                         edges[edge_key]['years'].add(year)
+                    if hash_id:
+                        edges[edge_key]['doc_ids'].add(hash_id)
 
     print(f"\nExtraction complete:")
     print(f"  Documents processed: {doc_count}")
@@ -484,7 +501,7 @@ def export_to_json(nodes, edges, display_names, output_file, min_count=1, min_we
             merged_nodes[canonical]['aliases'].add(email)
 
     # Step 3: Merge edges by canonical emails
-    merged_edges = defaultdict(lambda: {'weight': 0, 'years': set()})
+    merged_edges = defaultdict(lambda: {'weight': 0, 'years': set(), 'doc_ids': set()})
     for (source, target), data in edges.items():
         canonical_source = alias_map.get(source, source)
         canonical_target = alias_map.get(target, target)
@@ -492,6 +509,7 @@ def export_to_json(nodes, edges, display_names, output_file, min_count=1, min_we
             edge_key = (canonical_source, canonical_target)
             merged_edges[edge_key]['weight'] += data['weight']
             merged_edges[edge_key]['years'].update(data['years'])
+            merged_edges[edge_key]['doc_ids'].update(data.get('doc_ids', set()))
 
     # Filter nodes by minimum activity
     filtered_nodes = {}
@@ -534,7 +552,8 @@ def export_to_json(nodes, edges, display_names, output_file, min_count=1, min_we
                 'source': source,
                 'target': target,
                 'weight': data['weight'],
-                'years': sorted(list(data['years']))
+                'years': sorted(list(data['years'])),
+                'doc_ids': sorted(list(data.get('doc_ids', set())))
             })
 
     # Sort nodes by count descending

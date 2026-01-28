@@ -20,6 +20,7 @@ import re
 import shutil
 import sys
 from collections import defaultdict
+from itertools import permutations
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -44,17 +45,45 @@ EPA_ERROR_DOMAINS = {
     'epa.gow', 'epa.qqy', 'epa.qol', '-epa.gov', '1epa.gov', '1lepa.gov',
     '11epa.gov', 'gepa.gov', 'jepa.gov', 'epamail.gov',
     'domino.epamail.epa.gov', 'usepa.onmicrosoft.com',
+    # cpa.* variants (c is OCR error for e)
+    'cpa.gqy', 'cpa.go', 'cpa.goy', 'cpa.goyl', 'cpa.ggy', 'cpa.gm',
+    'cpa.gg', 'cpa.g.qy', 'cpa.gcn', 'cpa.qov', 'cpa.aov',
+    'cp3.govl', 'cp3.goy', 'cp3.qov',
+    # Other prefixed/garbled EPA
+    '.epa.gov', '.epa.gqy', '.epa.go', '.epa.aov',
+    'ilepa.gov', 'ljcpa.gov', 'qa.gov',
+    'epama.il',
 }
 
 # Other specific domain fixes
 DOMAIN_FIXES = {
-    'ios.doi.gov': 'doi.gov',
-    'sol.doi.gov': 'doi.gov',
-    '.blm.gov': 'blm.gov',
     'b1m.gov': 'blm.gov',
     'qmail.com': 'gmail.com',
     'gmial.com': 'gmail.com',
     'grnail.com': 'gmail.com',
+    'grnall.com': 'gmail.com',
+    'qrnail.com': 'gmail.com',
+    'gmai1.com': 'gmail.com',
+    # Garbled org domains
+    'acvpl.org': 'acypl.org',
+    'acypi.org': 'acypl.org',
+    # DOI sub-domain garbles (preserve ios.doi.gov subdomain)
+    'iosidoi.gov': 'ios.doi.gov',
+    'ios.doigov': 'ios.doi.gov',
+    'iosidoi.goy': 'ios.doi.gov',
+    'iosdoi.gov': 'ios.doi.gov',
+    'jos.doi.gov': 'ios.doi.gov',
+    'os.doi.gov': 'ios.doi.gov',
+    'io.s.doi.gov': 'ios.doi.gov',
+    'iios.doi.gov': 'ios.doi.gov',
+    'soldoi.gov': 'sol.doi.gov',
+    'lsol.doi.gov': 'sol.doi.gov',
+    # State domains
+    'aiaska.gov': 'alaska.gov',
+    # Military domain OCR garble (l -> i)
+    'maii.mil': 'mail.mil',
+    # ChevronTexaco renamed back to Chevron in 2005
+    'chevrontexaco.com': 'chevron.com',
 }
 
 # OCR character substitutions for domains
@@ -67,6 +96,8 @@ DOMAIN_OCR_CHAR_MAP = {
 
 # OCR character substitutions for local parts
 LOCAL_OCR_CHAR_MAP = {
+    'ffl': 'm',   # OCR ligature for 'm'
+    'ffi': 'n',   # OCR ligature for 'n'
     'rn': 'm',
     'ii': 'n',
     'v': 'y',
@@ -81,13 +112,14 @@ LOCAL_OCR_CHAR_MAP = {
 # Prefix chars (r, f, n, etc.) may be prepended by OCR errors.
 MAILTO_RE = re.compile(
     r'^(?:'
-    r'[rfnc]?mailto[i1l:;]\s*'       # mailto: with optional stray prefix
-    r'|[rfnc]?rnailto[i1l:;]\s*'     # rn→m OCR variant
-    r'|[rfnc]?rnai[il1]to[i1l:;]\s*' # double OCR variant
-    r'|[rfnc]?mai[il1]to[i1l:;]\s*'  # mail OCR variant
-    r'|mail\.to[i1l:;]\s*'           # mail.to: (dot-separated)
-    r'|[rfnc]?mailtcr\s*'            # mailtcr (garbled mailto)
-    r'|[rfnc]?mai[il1]sto[i1l:;]\s*' # mailsto (extra s)
+    r'[rfnc]?mailto[i1l:;c]\s*'       # mailto: with optional stray prefix (c = garbled colon)
+    r'|[rfnc]?rnailto[i1l:;c]\s*'     # rn→m OCR variant
+    r'|[rfnc]?rnai[il1]to[i1l:;c]\s*' # double OCR variant
+    r'|[rfnc]?mai[il1]to[i1l:;c]\s*'  # mail OCR variant
+    r'|mail\.to[i1l:;c]\s*'           # mail.to: (dot-separated)
+    r'|[rfnc]?mailtcr\s*'             # mailtcr (garbled mailto)
+    r'|[rfnc]?mai[il1]sto[i1l:;c]\s*' # mailsto (extra s)
+    r'|[1l]to[i1l:;c]\s*'             # partial mailto suffix (lto:) from line break
     r')',
     re.IGNORECASE,
 )
@@ -252,8 +284,8 @@ def normalize_domain(domain):
     if domain in EPA_ERROR_DOMAINS:
         return 'epa.gov'
 
-    # State EPA domains - preserve
-    if domain in ('iepa.gov', 'ilepa.gov'):
+    # State EPA domains - preserve (but not 'ilepa.gov' which is OCR garble)
+    if domain == 'iepa.gov':
         return domain
     if domain == 'calepa.ca.gov':
         return domain
@@ -261,6 +293,24 @@ def normalize_domain(domain):
     # Specific domain fixes
     if domain in DOMAIN_FIXES:
         return DOMAIN_FIXES[domain]
+
+    # Collapse dots within TLD components (e.g., cpa.g.qy -> cpa.gqy)
+    # OCR sometimes inserts dots within the TLD
+    parts = domain.split('.')
+    if len(parts) >= 3:
+        # Try joining the last 2 parts if they're both short (likely a split TLD)
+        last_two = parts[-2] + parts[-1]
+        if len(parts[-2]) <= 2 and len(parts[-1]) <= 3 and len(last_two) <= 4:
+            domain = '.'.join(parts[:-2]) + '.' + last_two
+        # Also try joining last 3 parts if all very short
+        elif len(parts) >= 4 and all(len(p) <= 2 for p in parts[-3:]):
+            joined = ''.join(parts[-3:])
+            if len(joined) <= 5:
+                domain = '.'.join(parts[:-3]) + '.' + joined
+
+    # Re-check EPA errors after dot collapse
+    if domain in EPA_ERROR_DOMAINS:
+        return 'epa.gov'
 
     # Generic suffix fixes (apply all, chained)
     # Handle compound errors like .goyl -> .gov (y->v then l appended)
@@ -274,13 +324,22 @@ def normalize_domain(domain):
             ('.rov', '.gov'), ('.sov', '.gov'), ('.eov', '.gov'),
             ('.oov', '.gov'), ('.fiov', '.gov'), ('.gow', '.gov'),
             ('.gcn', '.gov'), ('.gq', '.gov'),
+            ('.gqy', '.gov'), ('.ggy', '.gov'),  # OCR garble of .gov
+            ('.gg', '.gov'),   # truncated + garbled
             ('.eom', '.com'), ('.corn', '.com'), ('.coml', '.com'),
-            ('.orq', '.org'),
+            ('.orq', '.org'), ('.orql', '.org'),
+            ('.ora', '.org'), ('.ore', '.org'),  # OCR garble of .org
         ]:
             if domain.endswith(bad_suffix):
                 domain = domain[:-len(bad_suffix)] + good_suffix
                 changed = True
                 break
+        # Handle truncated .gov -> .go (only for hosts that look governmental)
+        if not changed and domain.endswith('.go') and not domain.endswith('.go.'):
+            host = domain[:-3]
+            if host and len(host.split('.')[-1]) <= 5:
+                domain = domain + 'v'  # .go -> .gov
+                changed = True
         # Strip trailing l/1/j/i from TLDs (e.g., .goyl -> .goy -> .gov)
         if not changed and len(domain) > 4:
             tld = domain.rsplit('.', 1)[-1]
@@ -289,6 +348,12 @@ def normalize_domain(domain):
                 changed = True
         if not changed:
             break
+
+    # Re-check EPA errors and DOMAIN_FIXES after suffix normalization
+    if domain in EPA_ERROR_DOMAINS:
+        return 'epa.gov'
+    if domain in DOMAIN_FIXES:
+        return DOMAIN_FIXES[domain]
 
     # Apply OCR char map to domain parts (hostname only, not TLD)
     parts = domain.split('.')
@@ -303,6 +368,8 @@ def normalize_domain(domain):
     # Check EPA-specific errors again after fixes
     if domain in EPA_ERROR_DOMAINS:
         return 'epa.gov'
+    if domain in DOMAIN_FIXES:
+        return DOMAIN_FIXES[domain]
 
     # Fuzzy EPA detection for remaining .gov domains
     if _is_likely_epa(domain):
@@ -352,6 +419,191 @@ def apply_local_ocr_normalization(email):
     local = ocr_normalize_local(local)
     local = canonicalize_local(local)
     return f"{local}@{domain}"
+
+
+# ---------------------------------------------------------------------------
+# Layer 3b: Join Split Local Parts
+# ---------------------------------------------------------------------------
+
+def join_split_local_matches(alias_map, all_original_ids):
+    """For emails with 3+ local parts, try joining parts to match existing
+    2-part canonicals. OCR sometimes inserts dots in the middle of names
+    (e.g., 'syd.ney' -> 'sydney', 'svdn.ev' -> 'svdnev' -> 'sydney').
+
+    Works on original (unsorted) part order since joining depends on
+    which parts were adjacent in the original text.
+    """
+    # Build set of 2-part canonicals per domain: sorted_tuple -> canonical key
+    two_part = defaultdict(dict)
+    for canon in set(alias_map.values()):
+        if '@' not in canon:
+            continue
+        local, domain = canon.split('@', 1)
+        parts = re.split(r'[._\-]', local)
+        parts = [p for p in parts if len(p) > 1]
+        if len(parts) == 2:
+            two_part[domain][tuple(sorted(parts))] = canon
+
+    new_merges = {}  # canonical -> target canonical
+
+    # Process each original ID to access unsorted part order
+    seen_canons = set()
+    for orig_id in all_original_ids:
+        canon = alias_map[orig_id]
+        if canon in new_merges or canon in seen_canons:
+            continue
+        seen_canons.add(canon)
+        if '@' not in canon:
+            continue
+        _, domain = canon.split('@', 1)
+
+        known = two_part.get(domain)
+        if not known:
+            continue
+
+        # Get unsorted parts from the structural+domain cleaned original
+        cleaned = structural_cleanup(orig_id)
+        cleaned = apply_domain_normalization(cleaned)
+        if '@' not in cleaned:
+            continue
+        orig_local = cleaned.split('@')[0]
+        orig_parts = re.split(r'[._\-]', orig_local)
+        orig_parts = [p for p in orig_parts if len(p) > 1]
+        if len(orig_parts) < 3:
+            continue
+
+        # Try all ways to join parts into 2 groups.
+        # For 3 parts [a,b,c], try all pair joins in both orders:
+        #   (ab,c), (ba,c), (ac,b), (ca,b), (bc,a), (cb,a)
+        # For 4+ parts, try consecutive splits plus pair combinations
+        best_match = None
+
+        if len(orig_parts) == 3:
+            a, b, c = orig_parts
+            join_candidates = [
+                (a + b, c), (b + a, c),
+                (a + c, b), (c + a, b),
+                (b + c, a), (c + b, a),
+            ]
+        else:
+            # For 4+ parts, try all consecutive splits
+            join_candidates = []
+            for split in range(1, len(orig_parts)):
+                left = ''.join(orig_parts[:split])
+                right = ''.join(orig_parts[split:])
+                join_candidates.append((left, right))
+
+        for left, right in join_candidates:
+            if len(left) < 2 or len(right) < 2:
+                continue
+            # Try with OCR normalization
+            left_n = ocr_normalize_local(left)
+            right_n = ocr_normalize_local(right)
+            key = tuple(sorted([left_n, right_n]))
+            if key in known:
+                target = known[key]
+                if target != canon:
+                    best_match = target
+                    break
+            # Try without OCR
+            key2 = tuple(sorted([left, right]))
+            if key2 in known:
+                target = known[key2]
+                if target != canon:
+                    best_match = target
+                    break
+
+        if best_match:
+            new_merges[canon] = best_match
+
+    return new_merges
+
+
+# ---------------------------------------------------------------------------
+# Layer 3c: Prefix Stripping (concatenated garbage)
+# ---------------------------------------------------------------------------
+
+def prefix_strip_matches(alias_map):
+    """Detect and strip concatenated garbage from local parts.
+
+    OCR sometimes concatenates content from a previous field onto the email,
+    e.g., 'sydneyfhupp.sydney@epa.gov' where 'sydneyf' is garbage from
+    a previous email field.
+
+    Checks ALL parts for known name fragments at both start and end.
+    """
+    # Collect known name parts per domain (from 2-part canonicals)
+    domain_name_parts = defaultdict(set)
+    two_part_canonicals = defaultdict(dict)
+    for canon in set(alias_map.values()):
+        if '@' not in canon:
+            continue
+        local, domain = canon.split('@', 1)
+        parts = re.split(r'[._\-]', local)
+        parts = [p for p in parts if len(p) > 1]
+        if len(parts) == 2:
+            for p in parts:
+                domain_name_parts[domain].add(p)
+            two_part_canonicals[domain][tuple(sorted(parts))] = canon
+
+    new_merges = {}
+
+    for canon in set(alias_map.values()):
+        if canon in new_merges:
+            continue
+        if '@' not in canon:
+            continue
+        local, domain = canon.split('@', 1)
+        known_parts = domain_name_parts.get(domain)
+        if not known_parts:
+            continue
+        known_twopart = two_part_canonicals.get(domain, {})
+
+        parts = re.split(r'[._\-]', local)
+        parts = [p for p in parts if p]
+        if len(parts) < 2:
+            continue
+
+        found = False
+        for i, part in enumerate(parts):
+            if found:
+                break
+            # Check if this part ENDS with a known name (garbage prefix + name)
+            for known_p in known_parts:
+                if len(known_p) < 3:
+                    continue
+                if part.endswith(known_p) and len(part) > len(known_p):
+                    stripped = known_p
+                    remaining = parts[:i] + [stripped] + parts[i+1:]
+                    remaining = [p for p in remaining if len(p) > 1]
+                    if len(remaining) == 2:
+                        key = tuple(sorted(remaining))
+                        if key in known_twopart:
+                            target = known_twopart[key]
+                            if target != canon:
+                                new_merges[canon] = target
+                                found = True
+                                break
+            if found:
+                break
+            # Check if this part STARTS with a known name (name + garbage suffix)
+            for known_p in known_parts:
+                if len(known_p) < 3:
+                    continue
+                if part.startswith(known_p) and len(part) > len(known_p):
+                    stripped = known_p
+                    remaining = parts[:i] + [stripped] + parts[i+1:]
+                    remaining = [p for p in remaining if len(p) > 1]
+                    if len(remaining) == 2:
+                        key = tuple(sorted(remaining))
+                        if key in known_twopart:
+                            target = known_twopart[key]
+                            if target != canon:
+                                new_merges[canon] = target
+                                found = True
+                                break
+
+    return new_merges
 
 
 # ---------------------------------------------------------------------------
@@ -441,7 +693,7 @@ def fuzzy_match_groups(nodes_by_id, alias_map, skip=False):
                 shorter = min(len_i, len_j)
                 if shorter < 2:
                     continue
-                threshold = max(1, shorter // 5)
+                threshold = max(2, shorter // 5)
 
                 # Length-difference pruning (since sorted by length, once
                 # difference exceeds threshold we can stop for larger j)
@@ -460,7 +712,7 @@ def fuzzy_match_groups(nodes_by_id, alias_map, skip=False):
                 # Only gate borderline matches (dist == threshold); for
                 # closer matches the address similarity is strong enough.
                 if ni and nj and dist == threshold:
-                    # Use both Jaro-Winkler on full names and token overlap
+                    # Use Jaro-Winkler on full names
                     jw = jaro_winkler(ni.lower(), nj.lower())
                     # Token overlap: compare sorted word sets
                     w1 = set(ni.lower().split())
@@ -468,7 +720,11 @@ def fuzzy_match_groups(nodes_by_id, alias_map, skip=False):
                     common = len(w1 & w2)
                     total = len(w1 | w2)
                     token_sim = common / total if total else 1.0
-                    if jw < 0.85 and token_sim < 0.4:
+                    # Local-part word overlap (split by dot)
+                    li_parts = set(p for p in li.split('.') if len(p) >= 3)
+                    lj_parts = set(p for p in lj.split('.') if len(p) >= 3)
+                    shared_local = bool(li_parts & lj_parts)
+                    if jw < 0.85 and token_sim < 0.4 and not shared_local:
                         continue
 
                 # Check traffic similarity - avoid merging distinct high-traffic people
@@ -489,9 +745,9 @@ def fuzzy_match_groups(nodes_by_id, alias_map, skip=False):
     for rep, members in uf.groups().items():
         if len(members) <= 1:
             continue
-        # Find the member with the highest count
-        best = max(members, key=lambda c: _total_count_for_canonical(
-            c, canonical_to_originals, nodes_by_id))
+        # Find the member with the highest count (deterministic tiebreaker: ID)
+        best = max(members, key=lambda c: (_total_count_for_canonical(
+            c, canonical_to_originals, nodes_by_id), c))
         for m in members:
             if m != best:
                 new_merges[m] = best
@@ -500,16 +756,26 @@ def fuzzy_match_groups(nodes_by_id, alias_map, skip=False):
 
 
 def _best_name_for_canonical(canonical, canonical_to_originals, nodes_by_id):
-    """Get the best display name among all original nodes for a canonical."""
+    """Get the best display name among all original nodes for a canonical.
+    Uses count-weighted frequency to avoid picking garbled OCR names."""
     originals = canonical_to_originals.get(canonical, [canonical])
-    best_name = ""
+    name_counts = defaultdict(int)
     for oid in originals:
         node = nodes_by_id.get(oid)
         if node and node.get("name"):
-            name = node["name"]
-            if len(name) > len(best_name):
-                best_name = name
-    return best_name
+            name_counts[node["name"]] += node.get("count", 1)
+    if not name_counts:
+        return ""
+    # Pick name with highest count, preferring title case and 2+ words
+    def score(name):
+        freq = name_counts[name]
+        words = name.split()
+        has_words = len(words) >= 2
+        is_title = name == name.title()
+        ocr_penalty = sum(1 for p in ('rn', 'ii', 'ffl', 'ffi', '0', '1', '3')
+                          if p in name.lower())
+        return (has_words, is_title, -ocr_penalty, freq, name)
+    return max(name_counts.keys(), key=score)
 
 
 def _total_count_for_canonical(canonical, canonical_to_originals, nodes_by_id):
@@ -734,10 +1000,129 @@ def best_display_name(nodes):
 
 # Domains known to use lastname.firstname@ format
 _LASTNAME_FIRST_DOMAINS = {
-    'epa.gov', 'doi.gov', 'blm.gov', 'fws.gov', 'usda.gov', 'boem.gov',
-    'bsee.gov', 'osmre.gov', 'bia.gov', 'usbr.gov', 'nps.gov', 'usgs.gov',
-    'state.gov',
+    'epa.gov',
 }
+
+
+_COMMON_FIRST_NAMES = {
+    'aaron', 'adam', 'adrian', 'alan', 'albert', 'alex', 'alexander',
+    'alfred', 'alice', 'alicia', 'alison', 'allen', 'allison', 'amanda',
+    'amber', 'amy', 'andrea', 'andrew', 'angela', 'ann', 'anna', 'anne',
+    'annie', 'anthony', 'april', 'arthur', 'ashley', 'barbara', 'barry',
+    'benjamin', 'bernard', 'beth', 'bethany', 'betty', 'beverly', 'bill',
+    'billy', 'blake', 'bobby', 'bonnie', 'brad', 'bradley', 'brenda',
+    'brendan', 'brent', 'brett', 'brian', 'bridget', 'brittany', 'brook',
+    'brooke', 'bruce', 'bryan', 'calvin', 'cameron', 'carl', 'carol',
+    'caroline', 'carolyn', 'catherine', 'chad', 'charles', 'charlotte',
+    'cheryl', 'chris', 'christian', 'christina', 'christine', 'christopher',
+    'cindy', 'claire', 'clarence', 'clark', 'claudia', 'clifford', 'clint',
+    'cody', 'cole', 'colin', 'connie', 'connor', 'corey', 'craig',
+    'crystal', 'cynthia', 'dale', 'dallas', 'dana', 'daniel', 'danny',
+    'darren', 'dave', 'david', 'dawn', 'dean', 'debbie', 'deborah',
+    'debra', 'denise', 'dennis', 'derek', 'derrick', 'diana', 'diane',
+    'don', 'donald', 'donna', 'doris', 'dorothy', 'doug', 'douglas',
+    'drew', 'dustin', 'dylan', 'earl', 'eddie', 'edward', 'eileen',
+    'elaine', 'elizabeth', 'ellen', 'emily', 'emma', 'eric', 'erica',
+    'erin', 'ernest', 'eugene', 'eva', 'evan', 'evelyn', 'faith',
+    'florence', 'frances', 'francis', 'frank', 'fred', 'frederick',
+    'gabriel', 'gary', 'gavin', 'gene', 'george', 'gerald', 'gina',
+    'glen', 'glenn', 'gloria', 'gordon', 'grace', 'grant', 'greg',
+    'gregory', 'gwen', 'hannah', 'harold', 'harry', 'harvey', 'heather',
+    'helen', 'henry', 'herbert', 'holly', 'howard', 'hunter', 'irene',
+    'isaac', 'ivan', 'jack', 'jackie', 'jacob', 'jacqueline', 'james',
+    'jamie', 'jane', 'janet', 'janice', 'jared', 'jasmine', 'jason',
+    'jean', 'jeff', 'jeffrey', 'jennifer', 'jenny', 'jeremy', 'jerry',
+    'jesse', 'jessica', 'jill', 'jimmy', 'joan', 'joanne', 'jocelyn',
+    'jody', 'joel', 'john', 'johnny', 'jonathan', 'jordan', 'joseph',
+    'joshua', 'joyce', 'judith', 'judy', 'julia', 'julian', 'julie',
+    'justin', 'karen', 'karl', 'kate', 'katherine', 'kathleen', 'kathryn',
+    'kathy', 'katie', 'keith', 'kelly', 'ken', 'kenneth', 'kevin',
+    'kimberly', 'kirk', 'kristen', 'kristin', 'kristina', 'kurt', 'kyle',
+    'lance', 'larry', 'laura', 'lauren', 'laurie', 'lawrence', 'leah',
+    'lee', 'leon', 'leonard', 'leslie', 'lillian', 'linda', 'lindsay',
+    'lisa', 'lois', 'loretta', 'lori', 'louis', 'louise', 'lucas', 'luke',
+    'lynn', 'madison', 'marc', 'marcus', 'margaret', 'maria', 'marie',
+    'marilyn', 'marion', 'mark', 'marsha', 'martha', 'martin', 'marvin',
+    'mary', 'matt', 'matthew', 'maureen', 'max', 'megan', 'melissa',
+    'michael', 'michele', 'michelle', 'mike', 'miles', 'miranda', 'misty',
+    'mitchell', 'molly', 'monica', 'morgan', 'morris', 'nancy', 'natalie',
+    'nathan', 'neil', 'nelson', 'nicholas', 'nicole', 'noah', 'norma',
+    'norman', 'oliver', 'olivia', 'oscar', 'owen', 'paige', 'pamela',
+    'patricia', 'patrick', 'paul', 'paula', 'peggy', 'penny', 'peter',
+    'philip', 'phillip', 'phyllis', 'rachel', 'ralph', 'randy', 'raymond',
+    'rebecca', 'regina', 'renee', 'rhonda', 'richard', 'rick', 'rita',
+    'robert', 'robin', 'rodney', 'roger', 'roland', 'ronald', 'rose',
+    'ross', 'roxanne', 'roy', 'ruby', 'russell', 'ruth', 'ryan',
+    'sabrina', 'sally', 'samantha', 'samuel', 'sandra', 'sandy', 'sara',
+    'sarah', 'scott', 'sean', 'seth', 'shane', 'shannon', 'sharon',
+    'sheila', 'shelley', 'sherry', 'shirley', 'sophia', 'stacey',
+    'stacy', 'stanley', 'stefanie', 'stephanie', 'stephen', 'steve',
+    'steven', 'stuart', 'susan', 'suzanne', 'sydney', 'sylvia', 'tamara',
+    'tammy', 'tanya', 'tara', 'taylor', 'teresa', 'terri', 'terry',
+    'thelma', 'theresa', 'thomas', 'tiffany', 'timothy', 'tina', 'todd',
+    'tommy', 'tony', 'tracy', 'travis', 'trevor', 'troy', 'tyler',
+    'valerie', 'vanessa', 'vernon', 'veronica', 'vicki', 'victoria',
+    'vincent', 'virginia', 'vivian', 'wade', 'walter', 'wanda', 'warren',
+    'wayne', 'wendy', 'wesley', 'whitney', 'william', 'willie', 'yolanda',
+    'zachary',
+}
+
+def _split_initial_name(name):
+    """Split a concatenated initial+lastname into 'F. Lastname'.
+    E.g., 'Jgreen' -> 'J. Green', 'Mthompson' -> 'M. Thompson'.
+    Returns None if the name is a common first name or doesn't match pattern.
+    """
+    if not name or len(name) < 5:
+        return None
+    words = name.split()
+    if len(words) != 1:
+        return None
+    word = words[0]
+    # Don't split common first names or generic words
+    if word.lower() in _COMMON_FIRST_NAMES:
+        return None
+    if word.lower() in _GENERIC_LOCALS:
+        return None
+    # Don't split common English words
+    if word.lower() in {
+        'press', 'scheduling', 'requests', 'records', 'planning',
+        'counsel', 'director', 'manager', 'editor', 'congress',
+        'intern', 'orders', 'updates', 'alerts', 'comments',
+        'regulation', 'regulatory', 'operations', 'program',
+        'executive', 'chairman', 'president', 'secretary',
+        'treasurer', 'governor', 'senator', 'representative',
+    }:
+        return None
+    if not word[0].isupper():
+        return None
+    rest = word[1:]
+    if len(rest) < 3:
+        return None
+    return f"{word[0]}. {rest.title()}"
+
+
+def _name_from_email(email_id):
+    """Generate a display name from an email address local part.
+    E.g., 'hupp.sydney@epa.gov' -> 'Hupp Sydney'.
+    For single-part locals like 'jgreen', tries to split into 'J. Green'.
+    Returns empty string if no sensible name can be derived.
+    """
+    if '@' not in email_id:
+        return ""
+    local = email_id.split('@')[0]
+    parts = re.split(r'[._\-]', local)
+    parts = [p for p in parts if len(p) > 1]
+    if not parts:
+        return ""
+    # Skip if looks like an org mailbox
+    if len(parts) == 1 and parts[0].lower() in _GENERIC_LOCALS:
+        return ""
+    if len(parts) == 1:
+        # Try splitting initial + lastname
+        split = _split_initial_name(parts[0].title())
+        if split:
+            return split
+    return ' '.join(p.title() for p in parts)
 
 
 def _fix_name_order(name, email_id, domain):
@@ -801,6 +1186,13 @@ def merge_nodes(best_id_groups, nodes_by_id):
 
         domain = normalize_domain(best_node.get("domain", ""))
         final_name = name or best_node.get("name", "")
+        # Generate name from email if none exists
+        if not final_name:
+            final_name = _name_from_email(best_id)
+        # Split concatenated initial+lastname (e.g., "Mshut" -> "M. Shut")
+        split = _split_initial_name(final_name)
+        if split:
+            final_name = split
         final_name = _fix_name_order(final_name, best_id, domain)
 
         merged = {
@@ -835,18 +1227,21 @@ def merge_edges(edges, alias_map):
         if key in edge_agg:
             edge_agg[key]["weight"] += edge.get("weight", 1)
             edge_agg[key]["years"].update(edge.get("years", []))
+            edge_agg[key]["doc_ids"].update(edge.get("doc_ids", []))
         else:
             edge_agg[key] = {
                 "source": src,
                 "target": tgt,
                 "weight": edge.get("weight", 1),
                 "years": set(edge.get("years", [])),
+                "doc_ids": set(edge.get("doc_ids", [])),
             }
 
-    # Convert years back to sorted lists
+    # Convert sets back to sorted lists
     merged_edges = []
     for e in edge_agg.values():
         e["years"] = sorted(e["years"])
+        e["doc_ids"] = sorted(e["doc_ids"])
         merged_edges.append(e)
 
     return merged_edges
@@ -873,16 +1268,271 @@ def recompute_stats(nodes, edges):
 # Main Pipeline
 # ---------------------------------------------------------------------------
 
+_GENERIC_LOCALS = {
+    'info', 'admin', 'support', 'contact', 'office', 'mail', 'webmaster',
+    'sales', 'noreply', 'help', 'service', 'news', 'media', 'press',
+    'marketing', 'hr', 'legal', 'compliance', 'jobs', 'careers', 'events',
+    'feedback', 'billing', 'security', 'postmaster', 'abuse', 'root',
+    'team', 'hello', 'general', 'inquiries', 'membership', 'scheduling',
+    'requests', 'records', 'orders', 'alerts', 'comments', 'updates',
+    'planning', 'operations', 'regulation', 'program', 'intern',
+    'counsel', 'director', 'chairman', 'editor', 'congress',
+}
+
+def _same_name_merge(alias_map, nodes_by_id):
+    """Merge nodes with identical display names, handling cross-domain OCR garbling.
+
+    Two strategies:
+    1. Same domain: merge nodes with identical normalized names (2+ words)
+    2. Cross-domain: merge nodes with identical local part AND identical name,
+       where the domains are similar (fuzzy match) — handles domain OCR errors
+    """
+    canonical_to_originals = defaultdict(list)
+    for orig_id, canon in alias_map.items():
+        canonical_to_originals[canon].append(orig_id)
+
+    new_merges = {}
+
+    # --- Strategy 1: Same domain, same normalized name ---
+    domain_name_groups = defaultdict(list)
+    for canon in set(alias_map.values()):
+        if '@' not in canon:
+            continue
+        domain = canon.split('@', 1)[1]
+        name = _best_name_for_canonical(canon, canonical_to_originals, nodes_by_id)
+        if not name:
+            continue
+        words = name.lower().split()
+        if len(words) < 2:
+            continue
+        norm_name = ' '.join(sorted(words))
+        count = _total_count_for_canonical(canon, canonical_to_originals, nodes_by_id)
+        domain_name_groups[(domain, norm_name)].append((canon, count))
+
+    for (domain, norm_name), entries in domain_name_groups.items():
+        if len(entries) < 2:
+            continue
+        entries.sort(key=lambda x: -x[1])
+        best = entries[0][0]
+        for canon, count in entries[1:]:
+            if canon not in new_merges:
+                new_merges[canon] = best
+
+    # --- Strategy 1b: Cross-domain, same local, similar domain ---
+    # For entries with identical canonical locals on OCR-similar domains,
+    # merge regardless of display name. OCR often garbles both domain AND
+    # name, so name matching can't catch these.
+    # Skip generic/common locals to avoid false merges.
+    local_domain_groups = defaultdict(list)
+    for canon in sorted(set(alias_map.values())):
+        if canon in new_merges:
+            continue
+        if '@' not in canon:
+            continue
+        local, domain = canon.split('@', 1)
+        local_clean = re.split(r'[._\-]', local)
+        local_clean = [p for p in local_clean if p]
+        # Skip generic locals and common first names (too ambiguous)
+        if len(local_clean) == 1 and local_clean[0] in _GENERIC_LOCALS:
+            continue
+        if local.lower() in _COMMON_FIRST_NAMES:
+            continue
+        if len(local) <= 3:
+            continue
+        count = _total_count_for_canonical(canon, canonical_to_originals, nodes_by_id)
+        local_domain_groups[local].append((canon, domain, count))
+
+    uf1b = _UnionFind()
+    for local, entries in local_domain_groups.items():
+        if len(entries) < 2:
+            continue
+        for canon, domain, count in entries:
+            uf1b.add(canon, count)
+        for i in range(len(entries)):
+            ci, di, cnti = entries[i]
+            for j in range(i + 1, len(entries)):
+                cj, dj, cntj = entries[j]
+                if uf1b.find(ci) == uf1b.find(cj):
+                    continue
+                dist = levenshtein(di, dj)
+                max_dlen = max(len(di), len(dj))
+                threshold = max(3, max_dlen // 3)
+                if dist <= threshold and dist > 0:
+                    uf1b.union(ci, cj)
+
+    for rep, members in uf1b.groups().items():
+        if len(members) <= 1:
+            continue
+        best = max(members, key=lambda c: (_total_count_for_canonical(
+            c, canonical_to_originals, nodes_by_id), c))
+        for m in members:
+            if m != best and m not in new_merges:
+                new_merges[m] = best
+
+    # --- Strategy 2: Cross-domain, same local + same name ---
+    # Group by (local_part, normalized_name), then use pairwise Union-Find
+    # so that domain-similar entries merge even if neither is the best.
+    local_name_groups = defaultdict(list)
+    is_generic_local = {}
+    for canon in sorted(set(alias_map.values())):
+        if canon in new_merges:
+            continue
+        if '@' not in canon:
+            continue
+        local, domain = canon.split('@', 1)
+        local_clean = re.split(r'[._\-]', local)
+        local_clean = [p for p in local_clean if p]
+        is_generic = len(local_clean) == 1 and local_clean[0] in _GENERIC_LOCALS
+        name = _best_name_for_canonical(canon, canonical_to_originals, nodes_by_id)
+        if not name:
+            continue
+        norm_name = ' '.join(sorted(name.lower().split()))
+        count = _total_count_for_canonical(canon, canonical_to_originals, nodes_by_id)
+        local_name_groups[(local, norm_name)].append((canon, domain, count))
+        is_generic_local[local] = is_generic
+
+    uf2 = _UnionFind()
+
+    for (local, norm_name), entries in local_name_groups.items():
+        if len(entries) < 2:
+            continue
+
+        # Generic locals AND common first names require domain similarity
+        require_domain_check = (
+            is_generic_local.get(local, False)
+            or local.lower() in _COMMON_FIRST_NAMES
+            or len(local) <= 4
+        )
+
+        for canon, domain, count in entries:
+            uf2.add(canon, count)
+
+        # Pairwise comparison within each group
+        for i in range(len(entries)):
+            ci, di, cnti = entries[i]
+            for j in range(i + 1, len(entries)):
+                cj, dj, cntj = entries[j]
+                if uf2.find(ci) == uf2.find(cj):
+                    continue
+                if require_domain_check:
+                    dist = levenshtein(di, dj)
+                    max_domain_len = max(len(di), len(dj))
+                    threshold = max(3, max_domain_len // 3)
+                    if dist > threshold:
+                        continue
+                uf2.union(ci, cj)
+
+    # --- Strategy 3: Cross-domain, fuzzy local + same name ---
+    # For entries with similar locals and identical names, merge cross-domain.
+    # Uses both full-string and part-level fuzzy matching to handle OCR
+    # errors that change alphabetical sort order of local parts.
+    name_groups = defaultdict(list)
+    for canon in sorted(set(alias_map.values())):
+        if canon in new_merges:
+            continue
+        if '@' not in canon:
+            continue
+        local, domain = canon.split('@', 1)
+        local_clean = re.split(r'[._\-]', local)
+        local_clean = [p for p in local_clean if p]
+        is_generic = len(local_clean) == 1 and local_clean[0] in _GENERIC_LOCALS
+        name = _best_name_for_canonical(canon, canonical_to_originals, nodes_by_id)
+        if not name:
+            continue
+        norm_name = ' '.join(sorted(name.lower().split()))
+        count = _total_count_for_canonical(canon, canonical_to_originals, nodes_by_id)
+        local_parts = sorted(re.split(r'[._\-]', local))
+        name_groups[norm_name].append((canon, local, domain, count, local_parts, is_generic))
+
+    for norm_name, entries in name_groups.items():
+        if len(entries) < 2:
+            continue
+        for canon, local, domain, count, parts, is_generic in entries:
+            uf2.add(canon, count)
+
+        for i in range(len(entries)):
+            ci, li, di, cnti, pi, gi = entries[i]
+            for j in range(i + 1, len(entries)):
+                cj, lj, dj, cntj, pj, gj = entries[j]
+                if uf2.find(ci) == uf2.find(cj):
+                    continue
+                # Try full-string fuzzy match first
+                local_dist = levenshtein(li, lj)
+                shorter_local = min(len(li), len(lj))
+                if shorter_local < 3:
+                    continue
+                local_threshold = max(2, shorter_local // 4)
+                matched = local_dist <= local_threshold
+                # If full-string fails, try part-level matching
+                # (handles cases where OCR changes sort order of parts)
+                if not matched and len(pi) == len(pj) and len(pi) >= 2:
+                    # Try both orderings of parts
+                    best_part_dist = float('inf')
+                    for perm in permutations(range(len(pj))):
+                        total = sum(levenshtein(pi[k], pj[perm[k]])
+                                    for k in range(len(pi)))
+                        best_part_dist = min(best_part_dist, total)
+                    part_threshold = max(2, sum(len(p) for p in pi) // 4)
+                    matched = best_part_dist <= part_threshold
+                if not matched:
+                    continue
+                # For generic locals, common names, or short locals,
+                # require domain similarity to avoid false merges
+                require_domain_check = (
+                    gi or gj
+                    or li.lower() in _COMMON_FIRST_NAMES
+                    or lj.lower() in _COMMON_FIRST_NAMES
+                    or len(li) <= 4
+                    or len(lj) <= 4
+                )
+                if require_domain_check:
+                    domain_dist = levenshtein(di, dj)
+                    max_dlen = max(len(di), len(dj))
+                    domain_threshold = max(3, max_dlen // 3)
+                    if domain_dist > domain_threshold:
+                        continue
+                uf2.union(ci, cj)
+
+    # Convert Union-Find groups to merge map.
+    # Also include Strategy 1 merge destinations in UF2 groups to avoid orphans.
+    for rep, members in uf2.groups().items():
+        if len(members) <= 1:
+            continue
+        # Include Strategy 1 destinations in the candidate pool
+        all_candidates = set(members)
+        for m in members:
+            if m in new_merges:
+                all_candidates.add(new_merges[m])
+        best = max(all_candidates, key=lambda c: (_total_count_for_canonical(
+            c, canonical_to_originals, nodes_by_id), c))
+        for m in all_candidates:
+            if m != best:
+                new_merges[m] = best
+
+    return new_merges
+
+
 def _apply_layer_merges(alias_map, merges):
-    """Apply a dict of canonical->canonical merges to alias_map. Returns change count."""
+    """Apply a dict of canonical->canonical merges to alias_map. Returns change count.
+    Resolves merge chains (A->B->C becomes A->C) before applying."""
     changes = 0
     if not merges:
         return changes
-    for src_canon, dst_canon in merges.items():
-        for orig_id in list(alias_map.keys()):
-            if alias_map[orig_id] == src_canon:
-                alias_map[orig_id] = dst_canon
-                changes += 1
+    # Resolve chains: follow each destination to its final target
+    resolved = {}
+    for src in merges:
+        dst = merges[src]
+        seen = {src}
+        while dst in merges and dst not in seen:
+            seen.add(dst)
+            dst = merges[dst]
+        resolved[src] = dst
+    # Apply resolved merges
+    for orig_id in list(alias_map.keys()):
+        current = alias_map[orig_id]
+        if current in resolved:
+            alias_map[orig_id] = resolved[current]
+            changes += 1
     return changes
 
 
@@ -930,6 +1580,16 @@ def build_alias_map(nodes, no_fuzzy=False, report=False):
             changes += 1
     layer_stats.append(("Layer 3: Local-Part OCR Normalization", changes))
 
+    # --- Layer 3b: Join Split Local Parts ---
+    join_merges = join_split_local_matches(alias_map, all_original_ids)
+    changes = _apply_layer_merges(alias_map, join_merges)
+    layer_stats.append(("Layer 3b: Join Split Locals", changes))
+
+    # --- Layer 3c: Prefix Stripping ---
+    prefix_merges = prefix_strip_matches(alias_map)
+    changes = _apply_layer_merges(alias_map, prefix_merges)
+    layer_stats.append(("Layer 3c: Prefix Stripping", changes))
+
     # --- Layer 4: Fuzzy Edit-Distance Matching ---
     fuzzy_merges = fuzzy_match_groups(nodes_by_id, alias_map, skip=no_fuzzy)
     changes = _apply_layer_merges(alias_map, fuzzy_merges)
@@ -944,6 +1604,13 @@ def build_alias_map(nodes, no_fuzzy=False, report=False):
     concat_merges = concatenation_matches(alias_map, nodes_by_id)
     changes = _apply_layer_merges(alias_map, concat_merges)
     layer_stats.append(("Layer 6: Concatenation Matching", changes))
+
+    # --- Layer 7: Same-Name Merging ---
+    # Merge nodes with identical display names within the same domain.
+    # Final safety net for duplicates that slipped through earlier layers.
+    same_name_merges = _same_name_merge(alias_map, nodes_by_id)
+    changes = _apply_layer_merges(alias_map, same_name_merges)
+    layer_stats.append(("Layer 7: Same-Name Merge", changes))
 
     # Print layer stats
     print("\n=== Deduplication Layer Stats ===")
