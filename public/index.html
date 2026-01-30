@@ -131,6 +131,8 @@
             display: inline-block; background: #444; color: #ccc;
             padding: 2px 6px; border-radius: 4px; font-size: 10px; margin-left: 4px;
         }
+        .hamburger { transition: transform 0.2s; display: inline-block; }
+        .hamburger.open { transform: rotate(90deg); }
         .org-item {
             display: flex; justify-content: space-between; align-items: center;
             padding: 3px 0; font-size: 11px; border-bottom: 1px solid #333;
@@ -329,8 +331,11 @@
         <div class="stat">Connections: <b id="iconn"></b></div>
         <div class="stat">Organization: <b id="iorg"></b></div>
         <div id="org-breakdown" style="margin: 10px 0; padding: 10px; background: #1a1a1a; border-radius: 6px; display: none;">
-            <div style="font-size: 11px; color: #666; margin-bottom: 5px;">Receives emails from:</div>
-            <div id="org-list"></div>
+            <div style="font-size: 11px; color: #666; cursor: pointer; display: flex; align-items: center; gap: 6px;" onclick="document.getElementById('org-list').style.display = document.getElementById('org-list').style.display === 'none' ? 'block' : 'none'; this.querySelector('.hamburger').classList.toggle('open')">
+                <span class="hamburger" style="font-size: 14px; line-height: 1;">&#9776;</span>
+                Receives emails from:
+            </div>
+            <div id="org-list" style="display: none;"></div>
         </div>
         <button class="btn" id="toxicdocs-btn">Search ToxicDocs</button>
         <button class="btn" id="toxicdocs-pair-btn">Search Correspondence on ToxicDocs</button>
@@ -724,12 +729,15 @@
     function getNodeAtPoint(x, y) {
         const px = (x - transform.x) / transform.k;
         const py = (y - transform.y) / transform.k;
+        // Use a generous hit radius (at least 12px in screen space) so clicks don't miss
+        const minHitR = 12 / transform.k;
 
         for (let i = nodeData.length - 1; i >= 0; i--) {
             const n = nodeData[i];
             const dx = px - n.x;
             const dy = py - n.y;
-            if (dx * dx + dy * dy < n.r * n.r) {
+            const hitR = Math.max(n.r, minHitR);
+            if (dx * dx + dy * dy < hitR * hitR) {
                 return n;
             }
         }
@@ -803,7 +811,16 @@
             }
         } else {
             if (isolateMode) {
-                exitIsolateMode();
+                // In isolate mode, clicking empty space deselects the connection node
+                // but does NOT exit isolate mode (use Unlock button for that)
+                if (selectedConnectionNode) {
+                    selectedConnectionNode = null;
+                    showInfo(isolateCentralNode);
+                    hideReorientPanel();
+                    document.getElementById("toxicdocs-pair-btn").style.display = "none";
+                    document.getElementById("download-correspondence-btn").style.display = "none";
+                    draw();
+                }
             } else if (lockedNode) {
                 unlockNode();
             }
