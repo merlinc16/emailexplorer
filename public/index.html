@@ -22,7 +22,7 @@
             background: #222; border: 1px solid #444; border-radius: 6px; color: #fff;
             box-sizing: border-box;
         }
-        #results { max-height: 200px; overflow-y: auto; }
+        #results, #domain-results { max-height: 200px; overflow-y: auto; }
         .result { padding: 8px; cursor: pointer; font-size: 13px; color: #ccc; border-radius: 4px; border-bottom: 1px solid #333; }
         .result:hover { background: #333; }
         .result small { color: #666; }
@@ -277,6 +277,15 @@
         <input type="text" id="search" placeholder="Search by name or email...">
         <div id="results"></div>
 
+        <div style="margin-top:10px; padding-top:10px; border-top:1px solid #333;">
+            <label style="margin-top:0; font-size:12px; color:#666;">Non-gov domain:</label>
+            <input type="text" id="domain-search" placeholder="Type to filter or browse..." style="margin-bottom:0;">
+            <select id="domain-select" style="width:100%; padding:8px; margin:4px 0 0; background:#222; border:1px solid #444; border-radius:6px; color:#fff; font-size:12px;">
+                <option value="">-- Browse all domains --</option>
+            </select>
+        </div>
+        <div id="domain-results"></div>
+
         <label>Min activity: <span id="fv">100</span></label>
         <input type="range" id="filter" min="10" max="500" value="100">
 
@@ -424,6 +433,7 @@
         "oklahoma.gov": {name: "State of Oklahoma", type: "government"},
         "texas.gov": {name: "State of Texas", type: "government"},
         "wv.gov": {name: "State of West Virginia", type: "government"},
+        "fs.fed.us": {name: "US Forest Service", type: "government"},
 
         // Oil & Gas
         "api.org": {name: "American Petroleum Institute", type: "industry"},
@@ -433,9 +443,22 @@
         "chevron.com": {name: "Chevron", type: "industry"},
         "conocophillips.com": {name: "ConocoPhillips", type: "industry"},
         "marathonoil.com": {name: "Marathon Oil", type: "industry"},
+        "marathonpetroleum.com": {name: "Marathon Petroleum", type: "industry"},
         "oxy.com": {name: "Occidental Petroleum", type: "industry"},
+        "hess.com": {name: "Hess Corporation", type: "industry"},
+        "ipaa.org": {name: "Independent Petroleum Assn. of America", type: "industry"},
+        "txoga.org": {name: "Texas Oil & Gas Association", type: "industry"},
+        "afpm.org": {name: "American Fuel & Petrochemical Manufacturers", type: "industry"},
+        "aga.org": {name: "American Gas Association", type: "industry"},
+        "anadarko.com": {name: "Anadarko Petroleum", type: "industry"},
+        "hilcorp.com": {name: "Hilcorp Energy", type: "industry"},
+        "statoil.com": {name: "Statoil (Equinor)", type: "industry"},
+        "consolenergy.com": {name: "Consol Energy", type: "industry"},
+        "cnxlp.com": {name: "CNX Resources", type: "industry"},
+        "archcoal.com": {name: "Arch Coal", type: "industry"},
+        "hollyfrontier.com": {name: "HollyFrontier", type: "industry"},
 
-        // Chemicals
+        // Chemicals & Manufacturing
         "americanchemistry.com": {name: "American Chemistry Council", type: "industry"},
         "dow.com": {name: "Dow Chemical", type: "industry"},
         "ge.com": {name: "General Electric", type: "industry"},
@@ -444,29 +467,203 @@
         "3m.com": {name: "3M", type: "industry"},
         "monsanto.com": {name: "Monsanto", type: "industry"},
         "bayer.com": {name: "Bayer", type: "industry"},
+        "chemours.com": {name: "Chemours Company", type: "industry"},
+        "syngenta.com": {name: "Syngenta", type: "industry"},
+        "honeywell.com": {name: "Honeywell", type: "industry"},
+        "croplifeamerica.org": {name: "CropLife America", type: "industry"},
+        "socma.com": {name: "Society of Chemical Manufacturers", type: "industry"},
+        "eastman.com": {name: "Eastman Chemical", type: "industry"},
+        "paint.org": {name: "American Coatings Association", type: "industry"},
+        "arkema.com": {name: "Arkema", type: "industry"},
+        "cpchem.com": {name: "Chevron Phillips Chemical", type: "industry"},
 
         // Mining & Utilities
         "nma.org": {name: "National Mining Association", type: "industry"},
         "eei.org": {name: "Edison Electric Institute", type: "industry"},
         "peabodyenergy.com": {name: "Peabody Energy", type: "industry"},
-        "rfrep.com": {name: "RF Industries", type: "industry"},
+        "southernco.com": {name: "Southern Company", type: "industry"},
+        "duke-energy.com": {name: "Duke Energy", type: "industry"},
+        "americaspower.org": {name: "America's Power (coal trade group)", type: "industry"},
+        "epri.com": {name: "Electric Power Research Institute", type: "industry"},
+        "publicpower.org": {name: "American Public Power Association", type: "industry"},
+        "cement.org": {name: "Portland Cement Association", type: "industry"},
+        "aluminum.org": {name: "Aluminum Association", type: "industry"},
+        "steel.org": {name: "American Iron & Steel Institute", type: "industry"},
+        "lignite.com": {name: "Lignite Energy Council", type: "industry"},
+        "arlp.com": {name: "Alliance Resource Partners (coal)", type: "industry"},
+
+        // Automotive & Transport
+        "toyota.com": {name: "Toyota", type: "industry"},
+        "ford.com": {name: "Ford Motor Company", type: "industry"},
+        "autoalliance.org": {name: "Alliance of Automobile Manufacturers", type: "industry"},
+        "globalautomakers.org": {name: "Association of Global Automakers", type: "industry"},
+        "boeing.com": {name: "Boeing", type: "industry"},
+        "gm.com": {name: "General Motors", type: "industry"},
+
+        // Agriculture & Food
+        "nahb.org": {name: "National Assn. of Home Builders", type: "industry"},
+        "fb.org": {name: "American Farm Bureau Federation", type: "industry"},
+        "nam.org": {name: "National Association of Manufacturers", type: "industry"},
+        "afandpa.org": {name: "American Forest & Paper Association", type: "industry"},
+        "ncga.com": {name: "National Corn Growers Association", type: "industry"},
+        "nasda.org": {name: "National Assn. of State Depts. of Agriculture", type: "industry"},
+        "beef.org": {name: "National Cattlemen's Beef Association", type: "industry"},
+        "soy.org": {name: "American Soybean Association", type: "industry"},
+        "tyson.com": {name: "Tyson Foods", type: "industry"},
+        "sorghumgrowers.com": {name: "National Sorghum Producers", type: "industry"},
+        "growthenergy.org": {name: "Growth Energy (ethanol)", type: "industry"},
+        "poet.com": {name: "POET LLC (biofuels)", type: "industry"},
+        "gpreinc.com": {name: "Green Plains Inc. (ethanol)", type: "industry"},
+        "walmart.com": {name: "Walmart", type: "industry"},
 
         // Think Tanks & Advocacy
         "heritage.org": {name: "Heritage Foundation", type: "thinktank"},
         "heartland.org": {name: "Heartland Institute", type: "thinktank"},
         "cato.org": {name: "Cato Institute", type: "thinktank"},
         "cei.org": {name: "Competitive Enterprise Institute", type: "thinktank"},
-        "uschamber.com": {name: "US Chamber of Commerce", type: "industry"},
+        "alec.org": {name: "American Legislative Exchange Council", type: "thinktank"},
+        "manhattan-institute.org": {name: "Manhattan Institute", type: "thinktank"},
+        "fed-soc.org": {name: "Federalist Society", type: "thinktank"},
+        "atr.org": {name: "Americans for Tax Reform", type: "thinktank"},
+        "freedomworks.org": {name: "FreedomWorks", type: "thinktank"},
+        "texaspolicy.com": {name: "Texas Public Policy Foundation", type: "thinktank"},
+        "rstreet.org": {name: "R Street Institute", type: "thinktank"},
+        "cagw.org": {name: "Citizens Against Government Waste", type: "thinktank"},
+        "washingtonpolicy.org": {name: "Washington Policy Center", type: "thinktank"},
+        "conservative.org": {name: "American Conservative Union", type: "thinktank"},
+        "afphq.org": {name: "Americans for Prosperity", type: "thinktank"},
+        "accf.org": {name: "American Council for Capital Formation", type: "thinktank"},
+        "steamboatinstitute.org": {name: "Steamboat Institute", type: "thinktank"},
+        "nrahq.org": {name: "National Rifle Association", type: "thinktank"},
 
-        // Law Firms & Consulting
+        // Trade Associations & Lobbying
+        "uschamber.com": {name: "US Chamber of Commerce", type: "industry"},
+        "awwa.org": {name: "American Water Works Association", type: "industry"},
+        "aeci.org": {name: "Associated Electric Cooperative", type: "industry"},
+        "westgov.org": {name: "Western Governors' Association", type: "government"},
+        "sigma.org": {name: "SIGMA (Fuel Marketers)", type: "industry"},
+        "nafoalliance.org": {name: "National Alliance of Forest Owners", type: "industry"},
+        "amec.org": {name: "Assn. of Missouri Electric Cooperatives", type: "industry"},
+        "nssga.org": {name: "National Stone, Sand & Gravel Assn.", type: "industry"},
+        "americanwaterways.com": {name: "American Waterways Operators", type: "industry"},
+        "wanada.org": {name: "Washington Area New Auto Dealers Assn.", type: "industry"},
+        "ipc.org": {name: "IPC (Electronics Industry)", type: "industry"},
+        "agc.org": {name: "Associated General Contractors", type: "industry"},
+        "acs.org": {name: "American Chemical Society", type: "industry"},
+        "nacd.com": {name: "National Assn. of Chemical Distributors", type: "industry"},
+        "iwpawood.org": {name: "International Wood Products Assn.", type: "industry"},
+        "npc.org": {name: "National Petroleum Council", type: "industry"},
+        "brt.org": {name: "Business Roundtable", type: "industry"},
+
+        // Law Firms
         "hunton.com": {name: "Hunton & Williams", type: "industry"},
         "sidley.com": {name: "Sidley Austin", type: "industry"},
+        "squirepb.com": {name: "Squire Patton Boggs", type: "industry"},
+        "hklaw.com": {name: "Holland & Knight", type: "industry"},
+        "bakerbotts.com": {name: "Baker Botts", type: "industry"},
+        "bracewell.com": {name: "Bracewell LLP", type: "industry"},
+        "steptoe.com": {name: "Steptoe & Johnson LLP", type: "industry"},
+        "hollandhart.com": {name: "Holland & Hart", type: "industry"},
+        "crowell.com": {name: "Crowell & Moring", type: "industry"},
+        "bdlaw.com": {name: "Beveridge & Diamond", type: "industry"},
+        "faegrebd.com": {name: "Faegre Drinker", type: "industry"},
+        "kelleydrye.com": {name: "Kelley Drye & Warren", type: "industry"},
+        "perkinscoie.com": {name: "Perkins Coie", type: "industry"},
+        "bhfs.com": {name: "Brownstein Hyatt Farber Schreck", type: "industry"},
+        "gibsondunn.com": {name: "Gibson Dunn & Crutcher", type: "industry"},
+        "akingump.com": {name: "Akin Gump", type: "industry"},
+        "kirkland.com": {name: "Kirkland & Ellis", type: "industry"},
+        "gtlaw.com": {name: "Greenberg Traurig", type: "industry"},
+
+        // Consulting & PR
+        "lawbc.com": {name: "Bergeson & Campbell", type: "industry"},
+        "mercuryllc.com": {name: "Mercury Public Affairs", type: "industry"},
+        "hbwresources.com": {name: "HBW Resources", type: "industry"},
+        "forbes-tate.com": {name: "Forbes Tate Partners", type: "industry"},
+        "rubiconglobal.com": {name: "Rubicon Global", type: "industry"},
+        "prime-policy.com": {name: "Prime Policy Group", type: "industry"},
+        "cgcn.com": {name: "CGCN Group", type: "industry"},
+        "alpinegroup.com": {name: "Alpine Group", type: "industry"},
+        "bgrdc.com": {name: "BGR Group", type: "industry"},
+        "fticonsulting.com": {name: "FTI Consulting", type: "industry"},
+        "gradientcorp.com": {name: "Gradient (risk science)", type: "industry"},
+        "exponent.com": {name: "Exponent Inc.", type: "industry"},
+
+        // Media & News
+        "cbsnews.com": {name: "CBS News", type: "unknown"},
+        "eenews.net": {name: "E&E News", type: "unknown"},
+        "spglobal.com": {name: "S&P Global", type: "unknown"},
+        "politico.com": {name: "Politico", type: "unknown"},
+        "politicoemail.com": {name: "Politico", type: "unknown"},
+        "nytimes.com": {name: "New York Times", type: "unknown"},
+        "bloomberg.net": {name: "Bloomberg", type: "unknown"},
+        "ihsmarkit.com": {name: "IHS Markit (S&P Global)", type: "unknown"},
+        "dailycallernewsfoundation.org": {name: "Daily Caller News Foundation", type: "unknown"},
+
+        // Environmental & Conservation
+        "ecos.org": {name: "Environmental Council of the States", type: "unknown"},
+        "ourpublicservice.org": {name: "Partnership for Public Service", type: "unknown"},
+        "nfwf.org": {name: "National Fish & Wildlife Foundation", type: "unknown"},
+        "edf.org": {name: "Environmental Defense Fund", type: "unknown"},
+        "nrdc.org": {name: "Natural Resources Defense Council", type: "unknown"},
+        "sierraclub.org": {name: "Sierra Club", type: "unknown"},
+        "audubon.org": {name: "National Audubon Society", type: "unknown"},
+        "ducks.org": {name: "Ducks Unlimited", type: "unknown"},
+        "tu.org": {name: "Trout Unlimited", type: "unknown"},
+        "getf.org": {name: "Global Environment & Technology Foundation", type: "unknown"},
+        "earthjustice.org": {name: "Earthjustice", type: "unknown"},
+        "lung.org": {name: "American Lung Association", type: "unknown"},
+        "4cleanair.org": {name: "National Assn. of Clean Air Agencies", type: "unknown"},
+
+        // Education
+        "stanford.edu": {name: "Stanford University", type: "education"},
+        "gwu.edu": {name: "George Washington University", type: "education"},
+        "si.edu": {name: "Smithsonian Institution", type: "education"},
+
+        // Finance
+        "spiritbank.com": {name: "SpiritBank", type: "industry"},
+        "cfacorp.com": {name: "Chick-fil-A", type: "industry"},
+
+        // Utilities & Water
+        "srpnet.com": {name: "Salt River Project", type: "industry"},
+        "ntmwd.com": {name: "North Texas Municipal Water District", type: "industry"},
+        "acwa.com": {name: "Association of California Water Agencies", type: "industry"},
+        "iowarec.org": {name: "Iowa Assn. of Electric Cooperatives", type: "industry"},
+        "mercercounty.org": {name: "Mercer County", type: "government"},
+        "kam.us.com": {name: "Kentucky Assn. of Manufacturers", type: "industry"},
+        "bgprod.com": {name: "BG Products", type: "industry"},
 
         // Personal
         "gmail.com": {name: "Gmail (Personal)", type: "personal"},
         "yahoo.com": {name: "Yahoo (Personal)", type: "personal"},
         "hotmail.com": {name: "Hotmail (Personal)", type: "personal"},
         "aol.com": {name: "AOL (Personal)", type: "personal"},
+        "outlook.com": {name: "Outlook (Personal)", type: "personal"},
+        "comcast.net": {name: "Comcast (Personal)", type: "personal"},
+        "me.com": {name: "Apple (Personal)", type: "personal"},
+        "icloud.com": {name: "iCloud (Personal)", type: "personal"},
+        "cox.net": {name: "Cox (Personal)", type: "personal"},
+
+        // Other OCR garbles mapped to known orgs
+        "venable.com": {name: "Venable LLP", type: "industry"},
+        "bockornygroup.com": {name: "Bockorny Group", type: "industry"},
+        "hoganlovells.com": {name: "Hogan Lovells", type: "industry"},
+        "livingstongroupdc.com": {name: "Livingston Group", type: "industry"},
+        "navigatorsglobal.com": {name: "Navigators Global", type: "industry"},
+        "verizon.net": {name: "Verizon (Personal)", type: "personal"},
+        "conservationfund.org": {name: "Conservation Fund", type: "unknown"},
+        "nelsonmullins.com": {name: "Nelson Mullins", type: "industry"},
+        "dowcorning.com": {name: "Dow Corning", type: "industry"},
+        "cargill.com": {name: "Cargill", type: "industry"},
+        "artexfas.com": {name: "ARTEX Fine Art Services", type: "industry"},
+        "opisnet.com": {name: "OPIS (Oil Price Info Service)", type: "industry"},
+        "esri.com": {name: "Esri (GIS)", type: "industry"},
+        "intrexon.com": {name: "Intrexon (Precigen)", type: "industry"},
+        "eog.myflorida.com": {name: "Florida Executive Office of the Governor", type: "government"},
+        "csg.org": {name: "Council of State Governments", type: "government"},
+        "congressionalsportsmen.org": {name: "Congressional Sportsmen's Foundation", type: "thinktank"},
+        "rgppc.org": {name: "Republican Governors Public Policy Committee", type: "thinktank"},
+        "bio.org": {name: "Biotechnology Innovation Organization", type: "industry"},
     };
 
     function getOrgInfo(domain) {
@@ -495,6 +692,7 @@
             document.getElementById("loading").style.display = "none";
             document.getElementById("controls").style.display = "block";
             populateAgencyFilter();
+            buildDomainList();
             applyFilters();  // Respects default gov-only checkbox
         })
         .catch(e => {
@@ -1074,6 +1272,75 @@
                     addNodeToView(m);
                 }
             };
+            res.appendChild(div);
+        });
+    });
+
+    // Domain search - build sorted domain list and populate dropdown + text filter
+    let allDomainCounts = [];  // [{domain, count, org}] sorted by count desc
+
+    function buildDomainList() {
+        const counts = {};
+        allData.nodes.forEach(n => {
+            const d = n.domain;
+            if (d.endsWith('.gov') || d.endsWith('.mil')) return;
+            counts[d] = (counts[d] || 0) + 1;
+        });
+        allDomainCounts = Object.entries(counts)
+            .map(([domain, count]) => {
+                const org = getOrgInfo(domain);
+                const label = org.name !== domain ? org.name : "";
+                return {domain, count, label};
+            })
+            .sort((a, b) => b.count - a.count);
+
+        // Populate the dropdown
+        const select = document.getElementById("domain-select");
+        select.innerHTML = '<option value="">-- Browse all domains (' + allDomainCounts.length + ') --</option>';
+        allDomainCounts.forEach(d => {
+            const opt = document.createElement("option");
+            opt.value = d.domain;
+            opt.textContent = d.label
+                ? `${d.domain} — ${d.label} (${d.count})`
+                : `${d.domain} (${d.count})`;
+            select.appendChild(opt);
+        });
+    }
+
+    function selectDomain(domain) {
+        document.getElementById("domain-search").value = "";
+        document.getElementById("domain-results").innerHTML = "";
+        document.getElementById("domain-select").value = "";
+        const domainNodes = allData.nodes.filter(n => n.domain === domain);
+        domainNodes.sort((a, b) => b.count - a.count);
+        domainNodes.forEach(dn => {
+            if (!nodeById.has(dn.id)) addNodeToView(dn);
+        });
+        const top = nodeById.get(domainNodes[0].id);
+        if (top) enterIsolateMode(top);
+    }
+
+    document.getElementById("domain-select").addEventListener("change", e => {
+        if (e.target.value) selectDomain(e.target.value);
+    });
+
+    document.getElementById("domain-search").addEventListener("input", e => {
+        const q = e.target.value.toLowerCase().trim();
+        const res = document.getElementById("domain-results");
+        res.innerHTML = "";
+        if (q.length < 2 || !allData) return;
+
+        const matches = allDomainCounts.filter(d =>
+            d.domain.includes(q) || d.label.toLowerCase().includes(q)
+        ).slice(0, 15);
+
+        matches.forEach(d => {
+            const div = document.createElement("div");
+            div.className = "result";
+            div.innerHTML = d.label
+                ? `${d.domain} — <b>${d.label}</b> <small>(${d.count})</small>`
+                : `${d.domain} <small>(${d.count})</small>`;
+            div.onclick = () => selectDomain(d.domain);
             res.appendChild(div);
         });
     });
