@@ -63,10 +63,30 @@ def build_email_regex(email):
     return f'{local_escaped}@[a-zA-Z0-9._-]*{base_escaped}'
 
 
-def query_documents(email1, email2):
-    """Query MongoDB for all documents containing both email addresses."""
-    regex1 = build_email_regex(email1)
-    regex2 = build_email_regex(email2)
+def build_aliases_regex(aliases):
+    """Build a single regex that matches any of the email aliases."""
+    if not aliases:
+        return None
+    patterns = [build_email_regex(a) for a in aliases if '@' in a]
+    if len(patterns) == 1:
+        return patterns[0]
+    return '(?:' + '|'.join(patterns) + ')'
+
+
+def query_documents(email1, email2, aliases1=None, aliases2=None):
+    """Query MongoDB for all documents containing both email addresses.
+
+    If aliases are provided, search for any alias variant to handle OCR errors.
+    """
+    if aliases1 and len(aliases1) > 1:
+        regex1 = build_aliases_regex(aliases1)
+    else:
+        regex1 = build_email_regex(email1)
+
+    if aliases2 and len(aliases2) > 1:
+        regex2 = build_aliases_regex(aliases2)
+    else:
+        regex2 = build_email_regex(email2)
 
     log(f"MongoDB regex1: {regex1}")
     log(f"MongoDB regex2: {regex2}")
@@ -104,15 +124,21 @@ def main():
     email2 = params.get("email2", "")
     name1 = params.get("name1", "person1")
     name2 = params.get("name2", "person2")
+    aliases1 = params.get("aliases1")
+    aliases2 = params.get("aliases2")
 
     if not email1 or not email2:
         print(json.dumps({"success": False, "error": "email1 and email2 are required"}))
         return
 
     log(f"Finding correspondence: {email1} <-> {email2}")
+    if aliases1:
+        log(f"  aliases1: {aliases1}")
+    if aliases2:
+        log(f"  aliases2: {aliases2}")
 
-    # Query MongoDB for all matching documents
-    hash_ids = query_documents(email1, email2)
+    # Query MongoDB for all matching documents (using aliases for OCR variants)
+    hash_ids = query_documents(email1, email2, aliases1, aliases2)
     log(f"Found {len(hash_ids)} documents in MongoDB")
 
     if not hash_ids:

@@ -1984,7 +1984,11 @@
         fetch('api/fetch-correspondence', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ email1: e1, email2: e2, name1: e1, name2: e2 })
+            body: JSON.stringify({
+                email1: e1, email2: e2, name1: e1, name2: e2,
+                aliases1: isolateCentralNode.aliases || [e1],
+                aliases2: selectedConnectionNode.aliases || [e2]
+            })
         })
         .then(r => r.json())
         .then(data => {

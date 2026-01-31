@@ -532,7 +532,7 @@ def apply_domain_normalization(email):
 # ---------------------------------------------------------------------------
 
 def ocr_normalize_local(local):
-    """Apply OCR character substitutions to local part."""
+    """Apply OCR character substitutions to local part (for dedup matching only)."""
     result = local
     # Apply substitutions in order from longest pattern to shortest
     # to avoid partial matches (e.g., 'rn' before single-char subs)
@@ -540,6 +540,43 @@ def ocr_normalize_local(local):
                                 key=lambda x: -len(x[0])):
         result = result.replace(ocr_err, fix)
     return result
+
+
+def ocr_clean_local_for_display(local):
+    """Clean OCR errors in the local part for display purposes.
+
+    Conservative: only fixes digits clearly embedded in alphabetic name parts.
+    Does NOT apply rn->m, ii->n, v->y or other letter-to-letter substitutions
+    because those have too many false positives (e.g. bernhardt, tierney, barnes).
+    """
+    # Split into name parts (by . or _)
+    parts = re.split(r'([._])', local)
+    cleaned = []
+    for part in parts:
+        if part in ('.', '_'):
+            cleaned.append(part)
+            continue
+        # If part is purely digits, keep as-is
+        if re.match(r'^\d+$', part):
+            cleaned.append(part)
+            continue
+        # Fix digits embedded in alpha parts (surrounded by letters)
+        # Common OCR digit-to-letter confusions:
+        result = re.sub(r'(?<=[a-z])1(?=[a-z])', 'l', part)   # 1 -> l
+        result = re.sub(r'(?<=[a-z])0(?=[a-z])', 'o', result)  # 0 -> o
+        result = re.sub(r'(?<=[a-z])3(?=[a-z])', 'e', result)  # 3 -> e
+        result = re.sub(r'(?<=[a-z])8(?=[a-z])', 'b', result)  # 8 -> b
+        result = re.sub(r'(?<=[a-z])5(?=[a-z])', 's', result)  # 5 -> s
+        result = re.sub(r'(?<=[a-z])6(?=[a-z])', 'b', result)  # 6 -> b
+        result = re.sub(r'(?<=[a-z])2(?=[a-z])', 'z', result)  # 2 -> z
+        # Fix leading digit before 3+ letters
+        result = re.sub(r'^3(?=[a-z]{3,})', 'e', result)
+        result = re.sub(r'^1(?=[a-z]{3,})', 'l', result)
+        result = re.sub(r'^0(?=[a-z]{3,})', 'o', result)
+        result = re.sub(r'^6(?=[a-z]{3,})', 'b', result)
+        result = re.sub(r'^5(?=[a-z]{3,})', 's', result)
+        cleaned.append(result)
+    return ''.join(cleaned)
 
 
 def canonicalize_local(local):
@@ -1335,6 +1372,9 @@ def merge_nodes(best_id_groups, nodes_by_id):
             final_name = split
         final_name = _fix_name_order(final_name, best_id, domain)
 
+        # Collect all original email aliases for MongoDB search
+        all_aliases = sorted(original_ids)
+
         merged = {
             "id": best_id,
             "name": final_name,
@@ -1344,6 +1384,7 @@ def merge_nodes(best_id_groups, nodes_by_id):
             "count": total_count,
             "years": sorted(all_years),
             "domain_count": max_domain_count,
+            "aliases": all_aliases,
         }
         merged_nodes.append(merged)
 
@@ -1771,10 +1812,14 @@ def build_alias_map(nodes, no_fuzzy=False, report=False):
         if not group_nodes:
             continue
         best_node = choose_canonical_node(group_nodes)
-        # Clean the best ID (structural + domain normalization) but keep the
-        # original local-part spelling (no OCR normalization on the output ID)
+        # Clean the best ID (structural + domain normalization + local OCR cleanup)
         best_id = structural_cleanup(best_node["id"])
         best_id = apply_domain_normalization(best_id)
+        # Apply conservative OCR cleanup to the local part for display
+        if '@' in best_id:
+            local, domain = best_id.split('@', 1)
+            local = ocr_clean_local_for_display(local)
+            best_id = f"{local}@{domain}"
         best_id_groups[best_id] = original_ids
         for oid in original_ids:
             final_remap[oid] = best_id
