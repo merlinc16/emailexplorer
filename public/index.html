@@ -372,7 +372,8 @@
         <button id="reorient-btn"></button>
     </div>
 
-    <div id="isolate-toggle">
+    <div id="isolate-toggle" style="display:flex; flex-direction:column; align-items:flex-end;">
+        <button id="back-btn" style="display:none; margin-bottom:6px; padding:10px 16px; background:#333; color:#aaa; border:1px solid #555; border-radius:8px; cursor:pointer; font-weight:600; font-size:12px;">← Back</button>
         <button id="isolate-btn">Lock Network</button>
     </div>
 
@@ -400,6 +401,7 @@
     let hoveredNode = null;
     let isolateMode = false;
     let isolateCentralNode = null;
+    const viewHistory = []; // stack of saved view states for Back button
     let selectedConnectionNode = null;  // Secondary selection in isolate mode
     // doc_ids no longer pre-tracked; MongoDB is queried at download time
     let currentEmail = "";
@@ -1120,6 +1122,7 @@
     }
 
     function render(minCount) {
+        pushViewState();
         // Filter nodes
         const nodes = allData.nodes.filter(n => n.count >= minCount);
         const ids = new Set(nodes.map(n => n.id));
@@ -1166,6 +1169,45 @@
 
         draw();
     }
+
+    function pushViewState() {
+        if (!nodeData.length) return;
+        viewHistory.push({
+            nodeData: nodeData.map(n => ({...n})),
+            linkData: linkData.map(l => ({source: l.source.id, target: l.target.id, weight: l.weight})),
+            isolateMode,
+            isolateCentralId: isolateCentralNode ? isolateCentralNode.id : null,
+            lockedId: lockedNode ? lockedNode.id : null,
+        });
+        if (viewHistory.length > 50) viewHistory.shift();
+        document.getElementById("back-btn").style.display = viewHistory.length ? "block" : "none";
+    }
+
+    function popViewState() {
+        if (!viewHistory.length) return;
+        const state = viewHistory.pop();
+        document.getElementById("back-btn").style.display = viewHistory.length ? "block" : "none";
+
+        nodeData = state.nodeData;
+        nodeById = new Map(nodeData.map(n => [n.id, n]));
+        linkData = state.linkData.map(l => ({
+            source: nodeById.get(l.source),
+            target: nodeById.get(l.target),
+            weight: l.weight
+        })).filter(l => l.source && l.target);
+
+        isolateMode = state.isolateMode;
+        isolateCentralNode = state.isolateCentralId ? nodeById.get(state.isolateCentralId) : null;
+        lockedNode = state.lockedId ? nodeById.get(state.lockedId) : null;
+
+        document.getElementById("isolate-btn").classList.toggle("active", isolateMode);
+        document.getElementById("isolate-btn").textContent = isolateMode ? "Unlock Network" : "Lock Network";
+        document.getElementById("nc").textContent = nodeData.length;
+        document.getElementById("ec").textContent = linkData.length;
+        draw();
+    }
+
+    document.getElementById("back-btn").onclick = () => popViewState();
 
     function draw() {
         ctx.save();
@@ -1743,6 +1785,7 @@
     }
 
     function selectDomain(domain) {
+        pushViewState();
         domainInput.value = "";
         closeDomainDropdown();
 
@@ -1794,6 +1837,7 @@
     });
 
     function addNodeToView(nodeInfo) {
+        pushViewState();
         // Add the node
         const newNode = {
             ...nodeInfo,
@@ -2119,6 +2163,7 @@
     };
 
     function enterIsolateMode(centralNode) {
+        pushViewState();
         isolateMode = true;
         isolateCentralNode = centralNode;
         document.getElementById("isolate-btn").classList.add("active");
@@ -2189,6 +2234,7 @@
     }
 
     function exitIsolateMode() {
+        pushViewState();
         isolateMode = false;
         isolateCentralNode = null;
         selectedConnectionNode = null;
