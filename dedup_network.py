@@ -360,6 +360,9 @@ def structural_cleanup(email):
     # Strip leading/trailing dots from local part
     local = local.strip('.')
 
+    # Replace hyphens with dots in local part (OCR misreads dots as hyphens)
+    local = local.replace('-', '.')
+
     # Collapse double dots
     while '..' in local:
         local = local.replace('..', '.')
