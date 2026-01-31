@@ -400,6 +400,7 @@
     let lockedNode = null;
     let hoveredNode = null;
     let isolateMode = false;
+    let domainViewMode = false;
     let isolateCentralNode = null;
     const viewHistory = []; // stack of saved view states for Back button
     let selectedConnectionNode = null;  // Secondary selection in isolate mode
@@ -1123,6 +1124,7 @@
 
     function render(minCount) {
         pushViewState();
+        domainViewMode = false;
         // Filter nodes
         const nodes = allData.nodes.filter(n => n.count >= minCount);
         const ids = new Set(nodes.map(n => n.id));
@@ -1298,8 +1300,17 @@
             }
         });
 
-        // Draw labels for large nodes when zoomed in enough
-        if (transform.k > 0.5) {
+        // Draw labels
+        if (domainViewMode) {
+            // In domain view, always show all labels
+            ctx.font = `${11 / transform.k}px system-ui`;
+            ctx.textAlign = "center";
+            ctx.fillStyle = "#fff";
+            nodeData.forEach(n => {
+                const label = n.name + ` (${n.count})`;
+                ctx.fillText(label, n.x, n.y - n.r - 4 / transform.k);
+            });
+        } else if (transform.k > 0.5) {
             ctx.font = `${10 / transform.k}px system-ui`;
             ctx.textAlign = "center";
             ctx.fillStyle = "#fff";
@@ -1766,7 +1777,8 @@
         ).join("") || '<div style="padding:8px;color:#666;font-size:12px;">No matches</div>';
 
         domainDropdown.querySelectorAll('.result[data-domain]').forEach(el => {
-            el.onclick = () => {
+            el.onclick = (ev) => {
+                ev.stopPropagation();
                 selectDomain(el.dataset.domain);
                 closeDomainDropdown();
             };
@@ -1799,20 +1811,23 @@
         unlockNode();
 
         // Show all nodes for this domain as dots, no edges
+        domainViewMode = true;
         const domainNodes = allData.nodes.filter(n => n.domain === domain);
         domainNodes.sort((a, b) => b.count - a.count);
 
-        // Arrange in a grid/circle layout
+        // Arrange in a circle layout with size based on count
         const cx = width / 2, cy = height / 2;
         const count = domainNodes.length;
+        const maxCount = Math.max(...domainNodes.map(n => n.count));
         nodeData = domainNodes.map((n, i) => {
             const angle = (2 * Math.PI * i) / count;
             const radius = Math.min(width, height) * 0.3 * (count > 1 ? 1 : 0);
+            const r = Math.max(5, 3 + 12 * Math.sqrt(n.count / maxCount));
             return {
                 ...n,
                 x: cx + radius * Math.cos(angle),
                 y: cy + radius * Math.sin(angle),
-                vx: 0, vy: 0, r: 5
+                vx: 0, vy: 0, r
             };
         });
         nodeById = new Map(nodeData.map(n => [n.id, n]));
@@ -1897,6 +1912,7 @@
     };
 
     function applyFilters() {
+        domainViewMode = false;
         const minCount = +document.getElementById("filter").value;
         const govOnly = document.getElementById("gov-only-checkbox").checked;
 
@@ -2168,6 +2184,7 @@
 
     function enterIsolateMode(centralNode) {
         pushViewState();
+        domainViewMode = false;
         isolateMode = true;
         isolateCentralNode = centralNode;
         document.getElementById("isolate-btn").classList.add("active");
