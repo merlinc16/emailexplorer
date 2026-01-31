@@ -55,6 +55,12 @@ EPA_ERROR_DOMAINS = {
     'epama.il',
 }
 
+# Full email address fixes (applied after structural cleanup)
+EMAIL_FIXES = {
+    'zumwalt@americanchemistry.com': 'bryan_zumwalt@americanchemistry.com',
+    'bryan.ziimwalt@americanchemistry.com': 'bryan_zumwalt@americanchemistry.com',
+}
+
 # Other specific domain fixes
 DOMAIN_FIXES = {
     'b1m.gov': 'blm.gov',
@@ -372,7 +378,13 @@ def structural_cleanup(email):
     # Strip leading/trailing dots and hyphens from domain
     domain = domain.strip('.-')
 
-    return f"{local}@{domain}" if local and domain else email
+    result = f"{local}@{domain}" if local and domain else email
+
+    # Apply known full-email fixes
+    if result in EMAIL_FIXES:
+        result = EMAIL_FIXES[result]
+
+    return result
 
 
 # ---------------------------------------------------------------------------
